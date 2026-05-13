@@ -58,6 +58,10 @@ export default defineConfig(({ envMode }) => {
     resolve: {
       alias: {
         '@': path.resolve(__dirname, './src'),
+        // Force single React instance to prevent "Cannot read properties of null (reading 'useMemo')"
+        // caused by duplicate React versions in node_modules (19.2.5 vs 19.2.6 in .pnpm store)
+        'react': path.resolve(__dirname, './node_modules/react'),
+        'react-dom': path.resolve(__dirname, './node_modules/react-dom'),
       },
     },
     html: {
@@ -65,6 +69,7 @@ export default defineConfig(({ envMode }) => {
     },
     server: {
       host: '0.0.0.0',
+      port: 3001,
       proxy: devProxy,
     },
     output: {
