@@ -184,3 +184,9 @@ web/classic/      — 经典前端（React 18, Vite, Semi Design）
 ### 规则 7：计费表达式系统 — 先阅读 `pkg/billingexpr/expr.md`
 
 涉及分层/动态计费（基于表达式的定价）时，必须先阅读 `pkg/billingexpr/expr.md`。该文档描述了设计哲学、表达式语言、完整系统架构、token 规范化规则、配额转换和表达式版本管理。
+
+### 规则 8：国际化 — 禁止硬编码用户可见文案
+
+**后端**：所有面向客户端的错误消息和提示文案必须通过 `i18n/keys.go` 定义 key，使用 `common.ApiErrorI18n(c, key, args...)` 返回。禁止在 controller 响应中硬编码中文或其他自然语言字符串。`common.ApiErrorMsg()` 仅用于动态拼接的业务错误（如上游返回的原始错误信息）。
+
+**前端**：所有用户可见的文案（标签、按钮文本、提示、错误消息、placeholder、toast 等）必须通过 `useTranslation()` 的 `t()` 函数返回，翻译 key 为英文原文。禁止在组件 JSX 中硬编码任何自然语言字符串。
