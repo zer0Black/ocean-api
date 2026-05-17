@@ -1,0 +1,29 @@
+feature_id: "20260517_feat_订阅套餐"
+base_on: null
+change_group: null
+feature_name: "订阅套餐"
+creator: "lixuetao"
+created_at: "2026-05-17T09:08:04Z"
+updated_at: "2026-05-17T09:08:04Z"
+stages:
+  specs:
+    status: "pending"
+    started_at: null
+    completed_at: null
+    check_owner: null
+  interface:
+    status: "pending"
+    started_at: null
+    completed_at: null
+    check_owner: null
+  dev_plan:
+    status: "pending"
+    started_at: null
+    completed_at: null
+    check_owner: null
+  dev_exec:
+    status: "pending"
+    started_at: null
+    completed_at: null
+    check_owner: null
+rollback_history: []
