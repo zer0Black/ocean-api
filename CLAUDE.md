@@ -146,9 +146,17 @@ web/classic/      — 经典前端（React 18, Vite, Semi Design）
 - SQLite 中的 `ALTER COLUMN`（不支持，用 ADD COLUMN 替代）
 - 无兼容方案的数据库专有列类型，JSON 存储用 `TEXT` 而非 `JSONB`
 
-**迁移：**
-- 确保所有迁移在三种数据库上都能运行
-- SQLite 只支持 `ALTER TABLE ... ADD COLUMN`
+**迁移（GORM AutoMigrate，禁止手写 SQL 文件）：**
+
+本项目不使用版本化 SQL 迁移框架（如 golang-migrate、goose），完全依赖 GORM AutoMigrate。禁止创建 `.sql` 迁移文件或在项目中编写独立的 SQL schema 变更脚本。
+
+新增表：在 `model/` 下定义 GORM 结构体，然后在 `model/main.go` 的 `migrateDB()` 函数中将新模型加入 `DB.AutoMigrate(...)` 调用列表。
+
+新增列：在对应模型的 Go 结构体中添加字段和 GORM tag，AutoMigrate 会在应用启动时自动 `ADD COLUMN`。
+
+修改已有列类型：GORM AutoMigrate 不会可靠地修改列类型。需要编写自定义预迁移函数（参考 `migrateTokenModelLimitsToText()` 或 `migrateSubscriptionPlanPriceAmount()`），在 `migrateDB()` 中 `DB.AutoMigrate()` 之前调用。函数必须幂等：先查询当前列类型，仅在需要变更时才执行 `ALTER TABLE`，且必须处理 MySQL/PostgreSQL 的语法差异和 SQLite 的限制。
+
+确保所有迁移在三种数据库上都能运行。SQLite 只支持 `ALTER TABLE ... ADD COLUMN`，不支持 `ALTER COLUMN`。
 
 ### 规则 3：前端 — 使用 Bun
 
