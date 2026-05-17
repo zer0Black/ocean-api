@@ -45,22 +45,20 @@ func EmbedFolder(fsEmbed embed.FS, targetPath string) static.ServeFileSystem {
 // themeAwareFileSystem delegates to the appropriate embedded FS based on
 // the current theme (via GetTheme). This enables runtime theme switching
 // without restarting the server.
+// [DEPRECATED: classic frontend - slated for removal] classicFS is retained
+// for compilation but always ignored at runtime.
 type themeAwareFileSystem struct {
 	defaultFS static.ServeFileSystem
-	classicFS static.ServeFileSystem
+	classicFS static.ServeFileSystem // [DEPRECATED: classic frontend - slated for removal]
 }
 
 func (t *themeAwareFileSystem) Exists(prefix string, path string) bool {
-	if GetTheme() == "classic" {
-		return t.classicFS.Exists(prefix, path)
-	}
+	// [DEPRECATED: classic frontend - slated for removal] always use defaultFS
 	return t.defaultFS.Exists(prefix, path)
 }
 
 func (t *themeAwareFileSystem) Open(name string) (http.File, error) {
-	if GetTheme() == "classic" {
-		return t.classicFS.Open(name)
-	}
+	// [DEPRECATED: classic frontend - slated for removal] always use defaultFS
 	return t.defaultFS.Open(name)
 }
 

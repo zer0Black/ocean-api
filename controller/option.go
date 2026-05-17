@@ -225,10 +225,11 @@ func UpdateOption(c *gin.Context) {
 			return
 		}
 	case "theme.frontend":
+		// [DEPRECATED: classic frontend - slated for removal] classic is accepted but remapped to default
 		if option.Value != "default" && option.Value != "classic" {
 			c.JSON(http.StatusOK, gin.H{
 				"success": false,
-				"message": "无效的主题值，可选值：default（新版前端）、classic（经典前端）",
+				"message": "无效的主题值，可选值：default（新版前端）",
 			})
 			return
 		}

@@ -42,10 +42,10 @@ var buildFS embed.FS
 var indexPage []byte
 
 //go:embed web/classic/dist
-var classicBuildFS embed.FS
+var classicBuildFS embed.FS // [DEPRECATED: classic frontend - slated for removal]
 
 //go:embed web/classic/dist/index.html
-var classicIndexPage []byte
+var classicIndexPage []byte // [DEPRECATED: classic frontend - slated for removal]
 
 func main() {
 	startTime := time.Now()
@@ -193,8 +193,8 @@ func main() {
 	router.SetRouter(server, router.ThemeAssets{
 		DefaultBuildFS:   buildFS,
 		DefaultIndexPage: indexPage,
-		ClassicBuildFS:   classicBuildFS,
-		ClassicIndexPage: classicIndexPage,
+		ClassicBuildFS:   classicBuildFS,   // [DEPRECATED: classic frontend - slated for removal]
+		ClassicIndexPage: classicIndexPage,  // [DEPRECATED: classic frontend - slated for removal]
 	})
 	var port = os.Getenv("PORT")
 	if port == "" {
@@ -228,7 +228,7 @@ func InjectUmamiAnalytics() {
 	analyticsInject := []byte(analyticsInjectBuilder.String())
 	placeholder := []byte("<!--umami-->\n")
 	indexPage = bytes.ReplaceAll(indexPage, placeholder, analyticsInject)
-	classicIndexPage = bytes.ReplaceAll(classicIndexPage, placeholder, analyticsInject)
+	classicIndexPage = bytes.ReplaceAll(classicIndexPage, placeholder, analyticsInject) // [DEPRECATED: classic frontend - slated for removal]
 }
 
 func InjectGoogleAnalytics() {
@@ -252,7 +252,7 @@ func InjectGoogleAnalytics() {
 	analyticsInject := []byte(analyticsInjectBuilder.String())
 	placeholder := []byte("<!--Google Analytics-->\n")
 	indexPage = bytes.ReplaceAll(indexPage, placeholder, analyticsInject)
-	classicIndexPage = bytes.ReplaceAll(classicIndexPage, placeholder, analyticsInject)
+	classicIndexPage = bytes.ReplaceAll(classicIndexPage, placeholder, analyticsInject) // [DEPRECATED: classic frontend - slated for removal]
 }
 
 func InitResources() error {
