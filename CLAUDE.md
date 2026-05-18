@@ -204,4 +204,4 @@ web/classic/      — 经典前端（React 18, Vite, Semi Design）
 
 | 规则文件 | 路径 | 说明 | 使用说明 |
 |---------|------|------|---------|
-| AGENTS_DATABASE_API_RULE.md | rules/AGENTS_DATABASE_API_RULE.md | 数据库设计和API接口设计的项目级配置规则 |建表、改表、写sql时、加接口需要阅读。|
+| AGENTS_DATABASE_API_RULE.md | /rules/AGENTS_DATABASE_API_RULE.md | 数据库设计和API接口设计的项目级配置规则 |建表、改表、写sql时、加接口需要阅读。|
