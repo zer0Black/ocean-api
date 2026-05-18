@@ -198,3 +198,10 @@ web/classic/      — 经典前端（React 18, Vite, Semi Design）
 **后端**：所有面向客户端的错误消息和提示文案必须通过 `i18n/keys.go` 定义 key，使用 `common.ApiErrorI18n(c, key, args...)` 返回。禁止在 controller 响应中硬编码中文或其他自然语言字符串。`common.ApiErrorMsg()` 仅用于动态拼接的业务错误（如上游返回的原始错误信息）。
 
 **前端**：所有用户可见的文案（标签、按钮文本、提示、错误消息、placeholder、toast 等）必须通过 `useTranslation()` 的 `t()` 函数返回，翻译 key 为英文原文。禁止在组件 JSX 中硬编码任何自然语言字符串。
+
+
+## 项目级规则文件
+
+| 规则文件 | 路径 | 说明 | 使用说明 |
+|---------|------|------|---------|
+| AGENTS_DATABASE_API_RULE.md | rules/AGENTS_DATABASE_API_RULE.md | 数据库设计和API接口设计的项目级配置规则 |建表、改表、写sql时、加接口需要阅读。|
