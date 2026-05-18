@@ -19,7 +19,7 @@
 
 ### 1.2 统一响应结构
 
-所有 `/api/*` 接口使用统一的 JSON 响应结构，HTTP 状态码始终为 200。
+所有 `/api/*` 管理后台接口使用统一的 JSON 响应结构。管理后台接口统一使用 HTTP 200，通过响应体中的 `success` 字段区分成功和失败。relay 转发等非管理接口可能使用其他 HTTP 状态码。
 
 **成功响应**：
 ```json
@@ -50,7 +50,7 @@ common.ApiErrorMsg(c, "具体错误描述")
 common.ApiErrorI18n(c, i18n.MsgXxx)
 ```
 
-禁止在 controller 中使用 `c.JSON(http.StatusOK, gin.H{...})` 手动构造响应，必须使用上述工具函数。
+推荐使用上述工具函数构造响应，避免手动拼接 `gin.H{...}`。历史代码中存在直接使用 `c.JSON()` 的写法，新增代码应统一使用工具函数。
 
 ### 1.3 分页查询
 
@@ -59,7 +59,7 @@ common.ApiErrorI18n(c, i18n.MsgXxx)
 | 参数 | 别名 | 说明 | 默认值 | 最大值 |
 |------|------|------|--------|--------|
 | `p` | `page` | 页码（从 1 开始） | 1 | - |
-| `page_size` | `ps`, `size` | 每页条数 | 20 | 100 |
+| `page_size` | `ps`, `size` | 每页条数 | 10 | 100 |
 
 **响应结构**（在 `data` 中）：
 ```json
@@ -94,6 +94,7 @@ common.ApiSuccess(c, pageInfo)
 | `middleware.RootAuth()` | 超级管理员（role >= 100） | 系统设置等敏感操作 |
 | `middleware.TokenAuth()` | API Token | relay 转发用 |
 | `middleware.TokenOrUserAuth()` | Session 或 Token | 混合认证 |
+| `middleware.TokenAuthReadOnly()` | API Token（只读） | 仅允许读取操作 |
 
 **角色常量**（`common/constants.go`）：
 - `RoleCommonUser = 1`
@@ -188,8 +189,9 @@ CreatedAt  int64 `json:"created_at" gorm:"bigint"`           // 创建时间，U
 UpdatedAt  int64 `json:"updated_at" gorm:"bigint"`           // 更新时间，Unix 时间戳
 CreatedTime int64 `json:"created_time" gorm:"bigint"`       // 旧模型用的创建时间
 ```
-统一使用 `int64` Unix 时间戳，不用 `time.Time`。通过 GORM Hook 自动设置：
+统一使用 `int64` Unix 时间戳，不用 `time.Time`。项目中存在两种设置方式：
 
+**方式一：GORM Hook**（较新模型，如订阅相关模型）：
 ```go
 func (x *Xxx) BeforeCreate(tx *gorm.DB) error {
     now := common.GetTimestamp()
@@ -204,7 +206,13 @@ func (x *Xxx) BeforeUpdate(tx *gorm.DB) error {
 }
 ```
 
-部分旧模型使用 `gorm:"autoCreateTime"` tag，新模型建议使用 BeforeCreate Hook。
+**方式二：GORM Tag**（旧模型，如 User、Token、Channel 等）：
+```go
+CreatedAt int64 `json:"created_at" gorm:"bigint;autoCreateTime"`
+UpdatedAt int64 `json:"updated_at" gorm:"bigint;autoUpdateTime"`
+```
+
+两种方式在项目中并存，新增模型建议统一使用方式一（Hook），更灵活且不依赖 GORM tag 隐式行为。
 
 **状态字段**：
 ```go
@@ -251,11 +259,10 @@ Remark string `json:"remark,omitempty" gorm:"type:varchar(255)" validate:"max=25
 
 // 字段类型
 `gorm:"type:varchar(128)"`                              // 变长字符串
-`gorm:"type:text"`                                      // 长文本
+`gorm:"type:text"`                                      // 长文本、JSON 字符串
 `gorm:"type:bigint"`                                    // 大整数（时间戳、金额）
 `gorm:"type:decimal(10,6)"`                             // 精确小数（价格）
 `gorm:"type:int"`                                       // 普通整数
-`gorm:"type:json"`                                      // JSON 结构数据
 
 // 约束
 `gorm:"not null"`                                       // 非空
@@ -277,7 +284,7 @@ Remark string `json:"remark,omitempty" gorm:"type:varchar(255)" validate:"max=25
 
 三种方式，按复杂度选择：
 
-**方式一：字符串存储**（简单场景）
+**方式一：字符串存储**（简单场景，推荐）
 ```go
 Setting string `json:"setting" gorm:"type:text"`
 // 业务层自行序列化/反序列化
@@ -285,7 +292,7 @@ Setting string `json:"setting" gorm:"type:text"`
 
 **方式二：json.RawMessage**（透传场景）
 ```go
-Data json.RawMessage `json:"data" gorm:"type:json"`
+Data json.RawMessage `json:"data" gorm:"type:text"`
 ```
 
 **方式三：实现 Scanner/Valuer 接口**（结构化场景）
@@ -303,6 +310,8 @@ func (c *ChannelInfo) Scan(value interface{}) error {
     return common.Unmarshal(bytesValue, c)
 }
 ```
+
+注意：JSON 数据统一使用 `type:text` 存储，不使用 `type:json` 或 `type:jsonb`，确保三种数据库兼容。历史代码中存在少量 `type:json` 的用法，新增字段应统一使用 `type:text`。
 
 ### 2.7 模型 CRUD 方法模式
 
@@ -337,6 +346,30 @@ func GetAllXxx(pageInfo *common.PageInfo) (items []*Xxx, total int64, err error)
 // 软删除
 func DeleteXxxById(id int) error {
     return DB.Where("id = ?", id).Delete(&Xxx{}).Error
+}
+```
+
+**常见变体方法**：
+
+```go
+// 可更新零值字段（使用 Select 显式指定列）
+func (x *Xxx) SelectUpdate() error {
+    return DB.Select("status", "updated_at").Updates(x).Error
+}
+
+// 硬删除（绕过软删除）
+func (x *Xxx) HardDelete() error {
+    return DB.Unscoped().Delete(x).Error
+}
+
+// 批量插入
+func BatchInsertXxx(items []Xxx) error {
+    return DB.Create(&items).Error
+}
+
+// 带权限检查的删除
+func DeleteXxxById(id int, userId int) error {
+    return DB.Where("id = ? AND user_id = ?", id, userId).Delete(&Xxx{}).Error
 }
 ```
 
