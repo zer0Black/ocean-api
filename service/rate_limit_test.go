@@ -5,8 +5,11 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/model"
 	"github.com/alicebob/miniredis/v2"
+	"github.com/glebarez/sqlite"
 	"github.com/go-redis/redis/v8"
+	"gorm.io/gorm"
 )
 
 func TestCalc5hWindowKey(t *testing.T) {
@@ -607,5 +610,404 @@ func TestCheckRateLimit_ExactAtLimit(t *testing.T) {
 	}
 	if status.Window5h.Remaining != 0 {
 		t.Errorf("remaining = %d, want 0 at exact limit", status.Window5h.Remaining)
+	}
+}
+
+// --- T4: 限速状态查询测试 ---
+
+// setupTestDB initializes an in-memory SQLite database for service-level tests
+// that need to query model data.
+func setupTestDB(t *testing.T) {
+	t.Helper()
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("failed to open test db: %v", err)
+	}
+	model.DB = db
+	common.UsingSQLite = true
+	common.RedisEnabled = false
+
+	if err := db.AutoMigrate(
+		&model.SubscriptionPlan{},
+		&model.UserSubscription{},
+	); err != nil {
+		t.Fatalf("failed to migrate: %v", err)
+	}
+
+	// Purge caches to avoid stale plan data from previous test runs
+	model.PurgeAllSubscriptionPlanCaches()
+
+	t.Cleanup(func() {
+		sqlDB, _ := db.DB()
+		if sqlDB != nil {
+			_ = sqlDB.Close()
+		}
+	})
+}
+
+func TestGetUserRateLimitStatus_InvalidUser(t *testing.T) {
+	// userId <= 0 should return nil without querying DB
+	statuses, err := GetUserRateLimitStatus(0)
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+	if statuses != nil {
+		t.Errorf("expected nil for userId=0, got %v", statuses)
+	}
+
+	statuses2, err := GetUserRateLimitStatus(-1)
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+	if statuses2 != nil {
+		t.Errorf("expected nil for userId=-1, got %v", statuses2)
+	}
+}
+
+func TestGetUserRateLimitStatus_NoSubscriptions(t *testing.T) {
+	setupTestDB(t)
+	_, cleanup := setupMiniredis(t)
+	defer cleanup()
+
+	// User 99999 has no subscriptions
+	statuses, err := GetUserRateLimitStatus(99999)
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+	if len(statuses) != 0 {
+		t.Errorf("expected empty list, got %d items", len(statuses))
+	}
+}
+
+func TestGetUserRateLimitStatus_WithCodingPlan(t *testing.T) {
+	setupTestDB(t)
+	_, cleanup := setupMiniredis(t)
+	defer cleanup()
+
+	// Create a coding_plan
+	plan := &model.SubscriptionPlan{
+		Title:                     "Test Coding Plan",
+		PriceAmount:               10.0,
+		Currency:                  "USD",
+		DurationUnit:              model.SubscriptionDurationMonth,
+		DurationValue:             1,
+		Enabled:                   true,
+		PlanType:                  model.PlanTypeCodingPlan,
+		RateLimitTokensPerWindow:  500000,
+		RateLimitWeeklyMultiplier: 20,
+	}
+	if err := model.DB.Create(plan).Error; err != nil {
+		t.Fatalf("failed to create plan: %v", err)
+	}
+
+	now := time.Now().Unix()
+	sub := &model.UserSubscription{
+		UserId:                    1,
+		PlanId:                    plan.Id,
+		AmountTotal:               0,
+		AmountUsed:                0,
+		StartTime:                 now - 100,
+		EndTime:                   now + 86400*30,
+		Status:                    "active",
+		Source:                    "admin",
+		PlanType:                  model.PlanTypeCodingPlan,
+		RateLimitTokensPerWindow:  500000,
+		RateLimitWeeklyMultiplier: 20,
+	}
+	if err := model.DB.Create(sub).Error; err != nil {
+		t.Fatalf("failed to create subscription: %v", err)
+	}
+
+	statuses, err := GetUserRateLimitStatus(1)
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+	if len(statuses) != 1 {
+		t.Fatalf("expected 1 status, got %d", len(statuses))
+	}
+	s := statuses[0]
+	if s.PlanType != model.PlanTypeCodingPlan {
+		t.Errorf("expected plan_type %s, got %s", model.PlanTypeCodingPlan, s.PlanType)
+	}
+	if s.PlanTitle != "Test Coding Plan" {
+		t.Errorf("expected plan_title 'Test Coding Plan', got '%s'", s.PlanTitle)
+	}
+	if s.SubscriptionId != sub.Id {
+		t.Errorf("expected subscription_id %d, got %d", sub.Id, s.SubscriptionId)
+	}
+	if s.Window5h.Limit != 500000 {
+		t.Errorf("expected 5h limit 500000, got %d", s.Window5h.Limit)
+	}
+	if s.Window5h.Used != 0 {
+		t.Errorf("expected 5h used 0, got %d", s.Window5h.Used)
+	}
+	weekLimit := 500000 * 20
+	if s.WindowWeek.Limit != weekLimit {
+		t.Errorf("expected week limit %d, got %d", weekLimit, s.WindowWeek.Limit)
+	}
+}
+
+// --- T4: 补充边界与异常路径测试 ---
+
+func TestGetUserRateLimitStatus_IgnoresAPIPlanSubscriptions(t *testing.T) {
+	setupTestDB(t)
+	_, cleanup := setupMiniredis(t)
+	defer cleanup()
+
+	// Create an api plan (not coding_plan)
+	plan := &model.SubscriptionPlan{
+		Title:         "API Plan",
+		PriceAmount:   5.0,
+		Currency:      "USD",
+		DurationUnit:  model.SubscriptionDurationMonth,
+		DurationValue: 1,
+		Enabled:       true,
+		PlanType:      model.PlanTypeAPI,
+	}
+	if err := model.DB.Create(plan).Error; err != nil {
+		t.Fatalf("failed to create plan: %v", err)
+	}
+
+	now := time.Now().Unix()
+	sub := &model.UserSubscription{
+		UserId:    1,
+		PlanId:    plan.Id,
+		StartTime: now - 100,
+		EndTime:   now + 86400*30,
+		Status:    "active",
+		Source:    "admin",
+		PlanType:  model.PlanTypeAPI,
+	}
+	if err := model.DB.Create(sub).Error; err != nil {
+		t.Fatalf("failed to create subscription: %v", err)
+	}
+
+	// API subscriptions should not appear in rate limit status
+	statuses, err := GetUserRateLimitStatus(1)
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+	if len(statuses) != 0 {
+		t.Errorf("expected empty list for api-only subscriptions, got %d", len(statuses))
+	}
+}
+
+func TestGetUserRateLimitStatus_IgnoresExpiredCodingPlans(t *testing.T) {
+	setupTestDB(t)
+	_, cleanup := setupMiniredis(t)
+	defer cleanup()
+
+	plan := &model.SubscriptionPlan{
+		Title:                     "Expired Coding Plan",
+		PriceAmount:               10.0,
+		DurationUnit:              model.SubscriptionDurationMonth,
+		DurationValue:             1,
+		Enabled:                   true,
+		PlanType:                  model.PlanTypeCodingPlan,
+		RateLimitTokensPerWindow:  100000,
+		RateLimitWeeklyMultiplier: 10,
+	}
+	if err := model.DB.Create(plan).Error; err != nil {
+		t.Fatalf("failed to create plan: %v", err)
+	}
+
+	now := time.Now().Unix()
+	sub := &model.UserSubscription{
+		UserId:                    1,
+		PlanId:                    plan.Id,
+		StartTime:                 now - 86400*60,
+		EndTime:                   now - 100, // expired
+		Status:                    "active",
+		Source:                    "admin",
+		PlanType:                  model.PlanTypeCodingPlan,
+		RateLimitTokensPerWindow:  100000,
+		RateLimitWeeklyMultiplier: 10,
+	}
+	if err := model.DB.Create(sub).Error; err != nil {
+		t.Fatalf("failed to create subscription: %v", err)
+	}
+
+	// Expired subscriptions should not appear
+	statuses, err := GetUserRateLimitStatus(1)
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+	if len(statuses) != 0 {
+		t.Errorf("expected empty list for expired subscription, got %d", len(statuses))
+	}
+}
+
+func TestGetUserRateLimitStatus_MultipleCodingPlans(t *testing.T) {
+	setupTestDB(t)
+	_, cleanup := setupMiniredis(t)
+	defer cleanup()
+
+	plan1 := &model.SubscriptionPlan{
+		Title:                     "Coding Plan A",
+		PriceAmount:               10.0,
+		DurationUnit:              model.SubscriptionDurationMonth,
+		DurationValue:             1,
+		Enabled:                   true,
+		PlanType:                  model.PlanTypeCodingPlan,
+		RateLimitTokensPerWindow:  500000,
+		RateLimitWeeklyMultiplier: 20,
+	}
+	if err := model.DB.Create(plan1).Error; err != nil {
+		t.Fatalf("failed to create plan1: %v", err)
+	}
+
+	plan2 := &model.SubscriptionPlan{
+		Title:                     "Coding Plan B",
+		PriceAmount:               20.0,
+		DurationUnit:              model.SubscriptionDurationMonth,
+		DurationValue:             1,
+		Enabled:                   true,
+		PlanType:                  model.PlanTypeCodingPlan,
+		RateLimitTokensPerWindow:  1000000,
+		RateLimitWeeklyMultiplier: 15,
+	}
+	if err := model.DB.Create(plan2).Error; err != nil {
+		t.Fatalf("failed to create plan2: %v", err)
+	}
+
+	now := time.Now().Unix()
+	for i, p := range []*model.SubscriptionPlan{plan1, plan2} {
+		sub := &model.UserSubscription{
+			UserId:                     1,
+			PlanId:                     p.Id,
+			StartTime:                  now - 100,
+			EndTime:                    now + 86400*30 + int64(i)*100,
+			Status:                     "active",
+			Source:                     "admin",
+			PlanType:                   model.PlanTypeCodingPlan,
+			RateLimitTokensPerWindow:   p.RateLimitTokensPerWindow,
+			RateLimitWeeklyMultiplier:  p.RateLimitWeeklyMultiplier,
+		}
+		if err := model.DB.Create(sub).Error; err != nil {
+			t.Fatalf("failed to create subscription %d: %v", i, err)
+		}
+	}
+
+	statuses, err := GetUserRateLimitStatus(1)
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+	if len(statuses) != 2 {
+		t.Fatalf("expected 2 statuses, got %d", len(statuses))
+	}
+
+	// Verify each status has correct plan info
+	titles := map[string]bool{}
+	for _, s := range statuses {
+		titles[s.PlanTitle] = true
+		if s.PlanType != model.PlanTypeCodingPlan {
+			t.Errorf("expected plan_type coding_plan, got %s", s.PlanType)
+		}
+	}
+	if !titles["Coding Plan A"] || !titles["Coding Plan B"] {
+		t.Errorf("expected both plan titles, got %v", titles)
+	}
+}
+
+func TestGetUserRateLimitStatus_ZeroRateLimits(t *testing.T) {
+	setupTestDB(t)
+	_, cleanup := setupMiniredis(t)
+	defer cleanup()
+
+	// CodingPlan with zero rate limits
+	plan := &model.SubscriptionPlan{
+		Title:                     "Zero Limit Plan",
+		DurationUnit:              model.SubscriptionDurationMonth,
+		DurationValue:             1,
+		Enabled:                   true,
+		PlanType:                  model.PlanTypeCodingPlan,
+		RateLimitTokensPerWindow:  0,
+		RateLimitWeeklyMultiplier: 0,
+	}
+	if err := model.DB.Create(plan).Error; err != nil {
+		t.Fatalf("failed to create plan: %v", err)
+	}
+
+	now := time.Now().Unix()
+	sub := &model.UserSubscription{
+		UserId:                    1,
+		PlanId:                    plan.Id,
+		StartTime:                 now - 100,
+		EndTime:                   now + 86400*30,
+		Status:                    "active",
+		Source:                    "admin",
+		PlanType:                  model.PlanTypeCodingPlan,
+		RateLimitTokensPerWindow:  0,
+		RateLimitWeeklyMultiplier: 0,
+	}
+	if err := model.DB.Create(sub).Error; err != nil {
+		t.Fatalf("failed to create subscription: %v", err)
+	}
+
+	statuses, err := GetUserRateLimitStatus(1)
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+	if len(statuses) != 1 {
+		t.Fatalf("expected 1 status, got %d", len(statuses))
+	}
+	// Zero limits should still return a status with zeroed windows
+	s := statuses[0]
+	if s.Window5h.Limit != 0 {
+		t.Errorf("expected 5h limit 0, got %d", s.Window5h.Limit)
+	}
+	if s.WindowWeek.Limit != 0 {
+		t.Errorf("expected week limit 0, got %d", s.WindowWeek.Limit)
+	}
+}
+
+func TestGetUserRateLimitStatus_DeletedPlan(t *testing.T) {
+	setupTestDB(t)
+	_, cleanup := setupMiniredis(t)
+	defer cleanup()
+
+	// Create a plan then delete it
+	plan := &model.SubscriptionPlan{
+		Title:                     "To Be Deleted",
+		DurationUnit:              model.SubscriptionDurationMonth,
+		DurationValue:             1,
+		Enabled:                   true,
+		PlanType:                  model.PlanTypeCodingPlan,
+		RateLimitTokensPerWindow:  500000,
+		RateLimitWeeklyMultiplier: 20,
+	}
+	if err := model.DB.Create(plan).Error; err != nil {
+		t.Fatalf("failed to create plan: %v", err)
+	}
+
+	now := time.Now().Unix()
+	sub := &model.UserSubscription{
+		UserId:                    1,
+		PlanId:                    plan.Id,
+		StartTime:                 now - 100,
+		EndTime:                   now + 86400*30,
+		Status:                    "active",
+		Source:                    "admin",
+		PlanType:                  model.PlanTypeCodingPlan,
+		RateLimitTokensPerWindow:  500000,
+		RateLimitWeeklyMultiplier: 20,
+	}
+	if err := model.DB.Create(sub).Error; err != nil {
+		t.Fatalf("failed to create subscription: %v", err)
+	}
+
+	// Delete the plan
+	model.DB.Delete(plan)
+
+	// Should still return status with empty plan title
+	statuses, err := GetUserRateLimitStatus(1)
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+	if len(statuses) != 1 {
+		t.Fatalf("expected 1 status, got %d", len(statuses))
+	}
+	if statuses[0].PlanTitle != "" {
+		t.Errorf("expected empty plan_title for deleted plan, got '%s'", statuses[0].PlanTitle)
 	}
 }

@@ -6,6 +6,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/gin-gonic/gin"
@@ -406,4 +407,17 @@ func AdminDeleteUserSubscription(c *gin.Context) {
 		return
 	}
 	common.ApiSuccess(c, nil)
+}
+
+func GetSubscriptionRateLimits(c *gin.Context) {
+	userId := c.GetInt("id")
+	statuses, err := service.GetUserRateLimitStatus(userId)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if statuses == nil {
+		statuses = []service.RateLimitStatus{}
+	}
+	common.ApiSuccess(c, statuses)
 }

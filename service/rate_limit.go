@@ -10,6 +10,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
+	"github.com/QuantumNous/new-api/model"
 	"github.com/go-redis/redis/v8"
 )
 
@@ -212,4 +213,32 @@ func CleanupRateLimitData(subscriptionId int) error {
 		}
 	}
 	return nil
+}
+
+// GetUserRateLimitStatus returns rate limit status for all active CodingPlan subscriptions of a user.
+func GetUserRateLimitStatus(userId int) ([]RateLimitStatus, error) {
+	if userId <= 0 {
+		return nil, nil
+	}
+	subs, err := model.GetActiveCodingPlanSubscriptions(userId)
+	if err != nil {
+		return nil, err
+	}
+	if len(subs) == 0 {
+		return []RateLimitStatus{}, nil
+	}
+
+	result := make([]RateLimitStatus, 0, len(subs))
+	for _, sub := range subs {
+		status, _ := CheckSubscriptionRateLimit(sub.Id, sub.RateLimitTokensPerWindow, sub.RateLimitWeeklyMultiplier)
+		plan, _ := model.GetSubscriptionPlanById(sub.PlanId)
+		planTitle := ""
+		if plan != nil {
+			planTitle = plan.Title
+		}
+		status.PlanTitle = planTitle
+		status.PlanType = sub.PlanType
+		result = append(result, *status)
+	}
+	return result, nil
 }

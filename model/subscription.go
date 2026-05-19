@@ -147,6 +147,14 @@ func InvalidateSubscriptionPlanCache(planId int) {
 	_ = infoCache.Purge()
 }
 
+// PurgeAllSubscriptionPlanCaches clears all subscription plan caches.
+func PurgeAllSubscriptionPlanCaches() {
+	cache := getSubscriptionPlanCache()
+	_ = cache.Purge()
+	infoCache := getSubscriptionPlanInfoCache()
+	_ = infoCache.Purge()
+}
+
 // Subscription plan
 type SubscriptionPlan struct {
 	Id int `json:"id"`
@@ -1224,4 +1232,21 @@ func PostConsumeUserSubscriptionDelta(userSubscriptionId int, delta int64) error
 		sub.AmountUsed = newUsed
 		return tx.Save(&sub).Error
 	})
+}
+
+// GetActiveCodingPlanSubscriptions returns all active CodingPlan subscriptions for a user.
+func GetActiveCodingPlanSubscriptions(userId int) ([]UserSubscription, error) {
+	if userId <= 0 {
+		return nil, nil
+	}
+	now := GetDBTimestamp()
+	var subs []UserSubscription
+	err := DB.Where("user_id = ? AND status = ? AND end_time > ? AND plan_type = ?",
+		userId, "active", now, PlanTypeCodingPlan).
+		Order("end_time desc, id desc").
+		Find(&subs).Error
+	if err != nil {
+		return nil, err
+	}
+	return subs, nil
 }
