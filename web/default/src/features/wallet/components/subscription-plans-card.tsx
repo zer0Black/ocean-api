@@ -50,12 +50,19 @@ import {
   getPublicPlans,
   getSelfSubscriptionFull,
   updateBillingPreference,
+  getRateLimits,
 } from '@/features/subscriptions/api'
 import { SubscriptionPurchaseDialog } from '@/features/subscriptions/components/dialogs/subscription-purchase-dialog'
-import { formatDuration, formatResetPeriod } from '@/features/subscriptions/lib'
+import {
+  formatDuration,
+  formatResetPeriod,
+  formatTokenCount,
+  formatResetTime,
+} from '@/features/subscriptions/lib'
 import type {
   PlanRecord,
   UserSubscriptionRecord,
+  RateLimitStatus,
 } from '@/features/subscriptions/types'
 import type { PaymentMethod, TopupInfo } from '../types'
 
@@ -105,6 +112,7 @@ export function SubscriptionPlansCard({
     useState('subscription_first')
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
+  const [rateLimits, setRateLimits] = useState<RateLimitStatus[]>([])
 
   const [purchaseOpen, setPurchaseOpen] = useState(false)
   const [selectedPlan, setSelectedPlan] = useState<PlanRecord | null>(null)
@@ -143,19 +151,30 @@ export function SubscriptionPlansCard({
     }
   }, [])
 
+  const fetchRateLimits = useCallback(async () => {
+    try {
+      const res = await getRateLimits()
+      if (res.success) {
+        setRateLimits(res.data || [])
+      }
+    } catch {
+      setRateLimits([])
+    }
+  }, [])
+
   useEffect(() => {
     const init = async () => {
       setLoading(true)
-      await Promise.all([fetchPlans(), fetchSelfSubscription()])
+      await Promise.all([fetchPlans(), fetchSelfSubscription(), fetchRateLimits()])
       setLoading(false)
     }
     init()
-  }, [fetchPlans, fetchSelfSubscription])
+  }, [fetchPlans, fetchSelfSubscription, fetchRateLimits])
 
   const handleRefresh = async () => {
     setRefreshing(true)
     try {
-      await fetchSelfSubscription()
+      await Promise.all([fetchSelfSubscription(), fetchRateLimits()])
     } finally {
       setRefreshing(false)
     }
@@ -213,6 +232,14 @@ export function SubscriptionPlansCard({
     }
     return map
   }, [plans])
+
+  const rateLimitMap = useMemo(() => {
+    const map = new Map<number, RateLimitStatus>()
+    for (const rl of rateLimits) {
+      map.set(rl.subscription_id, rl)
+    }
+    return map
+  }, [rateLimits])
 
   const getRemainingDays = (sub: UserSubscriptionRecord) => {
     const endTime = sub?.subscription?.end_time || 0
@@ -490,6 +517,30 @@ export function SubscriptionPlansCard({
                       {totalAmount > 0 && isActive && (
                         <Progress value={usagePercent} className='mt-2 h-1.5' />
                       )}
+                      {isActive && subscription?.plan_type === 'coding_plan' && (() => {
+                        const rl = rateLimitMap.get(subscription?.id)
+                        if (!rl) return null
+                        const w5hPercent = rl.window_5h.limit > 0
+                          ? Math.round((rl.window_5h.used / rl.window_5h.limit) * 100)
+                          : 0
+                        const wWeekPercent = rl.window_week.limit > 0
+                          ? Math.round((rl.window_week.used / rl.window_week.limit) * 100)
+                          : 0
+                        return (
+                          <div className='mt-2 space-y-1.5'>
+                            <div className='text-muted-foreground text-xs'>
+                              {t('5h Window')}: {formatTokenCount(rl.window_5h.used)}/{formatTokenCount(rl.window_5h.limit)} {t('tokens')} ({w5hPercent}% {t('used')})
+                              {rl.window_5h.reset_at > 0 && ` · ${t('resets in')} ${formatResetTime(rl.window_5h.reset_at)}`}
+                            </div>
+                            <Progress value={w5hPercent} className='h-1' />
+                            <div className='text-muted-foreground text-xs'>
+                              {t('Weekly Window')}: {formatTokenCount(rl.window_week.used)}/{formatTokenCount(rl.window_week.limit)} {t('tokens')} ({wWeekPercent}% {t('used')})
+                              {rl.window_week.reset_at > 0 && ` · ${t('resets in')} ${formatResetTime(rl.window_week.reset_at)}`}
+                            </div>
+                            <Progress value={wWeekPercent} className='h-1' />
+                          </div>
+                        )
+                      })()}
                     </div>
                   )
                 })}
@@ -525,6 +576,15 @@ export function SubscriptionPlansCard({
                 totalAmount > 0
                   ? `${t('Total Quota')}: ${formatQuota(totalAmount)}`
                   : `${t('Total Quota')}: ${t('Unlimited')}`,
+                plan.plan_type === 'coding_plan' &&
+                plan.rate_limit_tokens_per_window > 0
+                  ? `${t('Per 5h allowance')}: ${formatTokenCount(plan.rate_limit_tokens_per_window)} ${t('tokens')}`
+                  : null,
+                plan.plan_type === 'coding_plan' &&
+                plan.rate_limit_tokens_per_window > 0 &&
+                plan.rate_limit_weekly_multiplier > 0
+                  ? `${t('Weekly allowance')}: ${formatTokenCount(plan.rate_limit_tokens_per_window * plan.rate_limit_weekly_multiplier)} ${t('tokens')}`
+                  : null,
                 limit > 0 ? `${t('Purchase Limit')}: ${limit}` : null,
                 plan.upgrade_group
                   ? `${t('Upgrade Group')}: ${plan.upgrade_group}`

@@ -64,3 +64,24 @@ export function formatTimestamp(ts: number): string {
   if (!ts) return '-'
   return dayjs(ts * 1000).format('YYYY-MM-DD HH:mm:ss')
 }
+
+export function formatTokenCount(count: number): string {
+  if (count >= 1_000_000) {
+    return `${(count / 1_000_000).toFixed(1)}M`
+  }
+  if (count >= 1_000) {
+    return `${(count / 1_000).toFixed(1)}K`
+  }
+  return String(count)
+}
+
+export function formatResetTime(resetAt: number): string {
+  const diff = resetAt - Math.floor(Date.now() / 1000)
+  if (diff <= 0) return ''
+  const hours = Math.floor(diff / 3600)
+  const minutes = Math.floor((diff % 3600) / 60)
+  if (hours > 0) {
+    return `${hours}h ${minutes}m`
+  }
+  return `${minutes}m`
+}

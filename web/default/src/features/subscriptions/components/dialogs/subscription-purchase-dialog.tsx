@@ -43,7 +43,7 @@ import {
   paySubscriptionCreem,
   paySubscriptionEpay,
 } from '../../api'
-import { formatDuration, formatResetPeriod } from '../../lib'
+import { formatDuration, formatResetPeriod, formatTokenCount } from '../../lib'
 import type { PlanRecord } from '../../types'
 
 interface PaymentMethod {
@@ -240,6 +240,30 @@ export function SubscriptionPurchaseDialog(props: Props) {
                 </span>
                 <GroupBadge group={plan.upgrade_group} />
               </div>
+            )}
+            {plan.plan_type === 'coding_plan' && plan.rate_limit_tokens_per_window > 0 && (
+              <>
+                <div className='flex justify-between'>
+                  <span className='text-muted-foreground text-sm'>
+                    {t('Per 5h allowance')}
+                  </span>
+                  <span className='text-sm'>
+                    {formatTokenCount(plan.rate_limit_tokens_per_window)} {t('tokens')}
+                  </span>
+                </div>
+                {plan.rate_limit_weekly_multiplier > 0 && (
+                  <div className='flex justify-between'>
+                    <span className='text-muted-foreground text-sm'>
+                      {t('Weekly allowance')}
+                    </span>
+                    <span className='text-sm'>
+                      {formatTokenCount(
+                        plan.rate_limit_tokens_per_window * plan.rate_limit_weekly_multiplier
+                      )} {t('tokens')}
+                    </span>
+                  </div>
+                )}
+              </>
             )}
             <Separator />
             <div className='flex items-center justify-between'>
