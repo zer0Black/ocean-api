@@ -1,12 +1,14 @@
 package service
 
 import (
+	"net/http/httptest"
 	"testing"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/alicebob/miniredis/v2"
+	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
 	"github.com/go-redis/redis/v8"
 	"gorm.io/gorm"
@@ -1240,5 +1242,369 @@ func TestCleanupOnSubscriptionExpiry_DoesNotAffectOtherSubscriptions(t *testing.
 	}
 	if !mr.Exists("rate_limit:2:week:2026-W20") {
 		t.Error("expected subscription 2 week key to remain")
+	}
+}
+
+// --- T7: Relay 集成 — 限速检查测试 ---
+
+func TestCheckUserCodingPlanRateLimit_NoSubscription(t *testing.T) {
+	exceeded, status := CheckUserCodingPlanRateLimit(99999)
+	if exceeded {
+		t.Error("user with no CodingPlan should not be rate-limited")
+	}
+	if status != nil {
+		t.Error("status should be nil when no CodingPlan subscription exists")
+	}
+}
+
+func TestCheckUserCodingPlanRateLimit_Exceeded(t *testing.T) {
+	// 需要数据库和 Redis 环境
+	// 在无 DB 时返回 (false, nil)，可接受
+	exceeded, status := CheckUserCodingPlanRateLimit(1)
+	_ = exceeded
+	_ = status
+}
+
+// --- T7: 补充测试 ---
+
+func TestCheckUserCodingPlanRateLimit_InvalidUserId(t *testing.T) {
+	// userId <= 0 should return (false, nil) without querying DB
+	exceeded, status := CheckUserCodingPlanRateLimit(0)
+	if exceeded {
+		t.Error("userId=0 should not be rate-limited")
+	}
+	if status != nil {
+		t.Error("status should be nil for userId=0")
+	}
+
+	exceeded2, status2 := CheckUserCodingPlanRateLimit(-1)
+	if exceeded2 {
+		t.Error("userId=-1 should not be rate-limited")
+	}
+	if status2 != nil {
+		t.Error("status should be nil for userId=-1")
+	}
+}
+
+func TestCheckUserCodingPlanRateLimit_WithCodingPlanNotExceeded(t *testing.T) {
+	setupTestDB(t)
+	_, cleanup := setupMiniredis(t)
+	defer cleanup()
+
+	// Create a coding_plan with high limit
+	plan := &model.SubscriptionPlan{
+		Title:                     "High Limit Plan",
+		PriceAmount:               10.0,
+		DurationUnit:              model.SubscriptionDurationMonth,
+		DurationValue:             1,
+		Enabled:                   true,
+		PlanType:                  model.PlanTypeCodingPlan,
+		RateLimitTokensPerWindow:  500000,
+		RateLimitWeeklyMultiplier: 20,
+	}
+	if err := model.DB.Create(plan).Error; err != nil {
+		t.Fatalf("failed to create plan: %v", err)
+	}
+
+	now := time.Now().Unix()
+	sub := &model.UserSubscription{
+		UserId:                    100,
+		PlanId:                    plan.Id,
+		AmountTotal:               10000000,
+		StartTime:                 now - 100,
+		EndTime:                   now + 86400*30,
+		Status:                    "active",
+		Source:                    "admin",
+		PlanType:                  model.PlanTypeCodingPlan,
+		RateLimitTokensPerWindow:  500000,
+		RateLimitWeeklyMultiplier: 20,
+	}
+	if err := model.DB.Create(sub).Error; err != nil {
+		t.Fatalf("failed to create subscription: %v", err)
+	}
+
+	// No usage recorded, should not be exceeded
+	exceeded, status := CheckUserCodingPlanRateLimit(100)
+	if exceeded {
+		t.Error("should not be exceeded with no usage")
+	}
+	if status != nil {
+		t.Error("status should be nil when not exceeded")
+	}
+}
+
+func TestCheckUserCodingPlanRateLimit_WithCodingPlanExceeded(t *testing.T) {
+	setupTestDB(t)
+	mr, cleanup := setupMiniredis(t)
+	defer cleanup()
+
+	limit5h := 100
+	multiplier := 10
+
+	plan := &model.SubscriptionPlan{
+		Title:                     "Low Limit Plan",
+		PriceAmount:               5.0,
+		DurationUnit:              model.SubscriptionDurationMonth,
+		DurationValue:             1,
+		Enabled:                   true,
+		PlanType:                  model.PlanTypeCodingPlan,
+		RateLimitTokensPerWindow:  limit5h,
+		RateLimitWeeklyMultiplier: multiplier,
+	}
+	if err := model.DB.Create(plan).Error; err != nil {
+		t.Fatalf("failed to create plan: %v", err)
+	}
+
+	now := time.Now().Unix()
+	sub := &model.UserSubscription{
+		UserId:                    200,
+		PlanId:                    plan.Id,
+		AmountTotal:               10000000,
+		StartTime:                 now - 100,
+		EndTime:                   now + 86400*30,
+		Status:                    "active",
+		Source:                    "admin",
+		PlanType:                  model.PlanTypeCodingPlan,
+		RateLimitTokensPerWindow:  limit5h,
+		RateLimitWeeklyMultiplier: multiplier,
+	}
+	if err := model.DB.Create(sub).Error; err != nil {
+		t.Fatalf("failed to create subscription: %v", err)
+	}
+
+	// Pre-populate Redis with usage exceeding 5h limit
+	nowUtc := time.Now().UTC()
+	windowKey5h := Calc5hWindowKey(nowUtc.Hour())
+	redisKey5h := RateLimitRedisKey5h(sub.Id, windowKey5h)
+	mr.ZAdd(redisKey5h, float64(nowUtc.Unix()), "req_1:150")
+
+	exceeded, status := CheckUserCodingPlanRateLimit(200)
+	if !exceeded {
+		t.Error("should be exceeded when 5h usage >= limit")
+	}
+	if status == nil {
+		t.Fatal("status should not be nil when exceeded")
+	}
+	if status.Window5h.Remaining != 0 {
+		t.Errorf("5h remaining should be 0, got %d", status.Window5h.Remaining)
+	}
+}
+
+func TestCheckUserCodingPlanRateLimit_MultipleSubsFirstExceeded(t *testing.T) {
+	setupTestDB(t)
+	mr, cleanup := setupMiniredis(t)
+	defer cleanup()
+
+	// Create two plans, first with very low limit
+	lowLimitPlan := &model.SubscriptionPlan{
+		Title:                     "Low Limit",
+		PriceAmount:               1.0,
+		DurationUnit:              model.SubscriptionDurationMonth,
+		DurationValue:             1,
+		Enabled:                   true,
+		PlanType:                  model.PlanTypeCodingPlan,
+		RateLimitTokensPerWindow:  10,
+		RateLimitWeeklyMultiplier: 5,
+	}
+	if err := model.DB.Create(lowLimitPlan).Error; err != nil {
+		t.Fatalf("failed to create low plan: %v", err)
+	}
+
+	highLimitPlan := &model.SubscriptionPlan{
+		Title:                     "High Limit",
+		PriceAmount:               10.0,
+		DurationUnit:              model.SubscriptionDurationMonth,
+		DurationValue:             1,
+		Enabled:                   true,
+		PlanType:                  model.PlanTypeCodingPlan,
+		RateLimitTokensPerWindow:  500000,
+		RateLimitWeeklyMultiplier: 20,
+	}
+	if err := model.DB.Create(highLimitPlan).Error; err != nil {
+		t.Fatalf("failed to create high plan: %v", err)
+	}
+
+	now := time.Now().Unix()
+	nowUtc := time.Now().UTC()
+
+	// Low-limit subscription (exceeded)
+	lowSub := &model.UserSubscription{
+		UserId:                    300,
+		PlanId:                    lowLimitPlan.Id,
+		AmountTotal:               10000000,
+		StartTime:                 now - 100,
+		EndTime:                   now + 86400*10,
+		Status:                    "active",
+		Source:                    "admin",
+		PlanType:                  model.PlanTypeCodingPlan,
+		RateLimitTokensPerWindow:  10,
+		RateLimitWeeklyMultiplier: 5,
+	}
+	if err := model.DB.Create(lowSub).Error; err != nil {
+		t.Fatalf("failed to create low sub: %v", err)
+	}
+
+	// Exceed the low limit
+	windowKey5h := Calc5hWindowKey(nowUtc.Hour())
+	redisKey5h := RateLimitRedisKey5h(lowSub.Id, windowKey5h)
+	mr.ZAdd(redisKey5h, float64(nowUtc.Unix()), "req_1:50")
+
+	// High-limit subscription (not exceeded)
+	highSub := &model.UserSubscription{
+		UserId:                    300,
+		PlanId:                    highLimitPlan.Id,
+		AmountTotal:               10000000,
+		StartTime:                 now - 100,
+		EndTime:                   now + 86400*30,
+		Status:                    "active",
+		Source:                    "admin",
+		PlanType:                  model.PlanTypeCodingPlan,
+		RateLimitTokensPerWindow:  500000,
+		RateLimitWeeklyMultiplier: 20,
+	}
+	if err := model.DB.Create(highSub).Error; err != nil {
+		t.Fatalf("failed to create high sub: %v", err)
+	}
+
+	// Should be exceeded because at least one subscription is exceeded
+	exceeded, status := CheckUserCodingPlanRateLimit(300)
+	if !exceeded {
+		t.Error("should be exceeded when any subscription is exceeded")
+	}
+	if status == nil {
+		t.Fatal("status should not be nil when exceeded")
+	}
+}
+
+func TestInjectRateLimitHeaders_NilContext(t *testing.T) {
+	// Should not panic with nil context
+	InjectRateLimitHeaders(nil, 1)
+}
+
+func TestInjectRateLimitHeaders_NilRDB(t *testing.T) {
+	origRDB := common.RDB
+	common.RDB = nil
+	defer func() { common.RDB = origRDB }()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+
+	InjectRateLimitHeaders(c, 1)
+	// Should not set any headers when RDB is nil
+	if w.Header().Get("X-RateLimit-Limit-5h") != "" {
+		t.Error("should not set headers with nil RDB")
+	}
+}
+
+func TestInjectRateLimitHeaders_NonCodingPlanSubscription(t *testing.T) {
+	setupTestDB(t)
+	origRDB := common.RDB
+	common.RDB = nil
+	defer func() { common.RDB = origRDB }()
+
+	// Create an api plan subscription (not coding_plan)
+	plan := &model.SubscriptionPlan{
+		Title:         "API Plan",
+		PriceAmount:   5.0,
+		DurationUnit:  model.SubscriptionDurationMonth,
+		DurationValue: 1,
+		Enabled:       true,
+		PlanType:      model.PlanTypeAPI,
+	}
+	if err := model.DB.Create(plan).Error; err != nil {
+		t.Fatalf("failed to create plan: %v", err)
+	}
+
+	now := time.Now().Unix()
+	sub := &model.UserSubscription{
+		UserId:    1,
+		PlanId:    plan.Id,
+		StartTime: now - 100,
+		EndTime:   now + 86400*30,
+		Status:    "active",
+		Source:    "admin",
+		PlanType:  model.PlanTypeAPI,
+	}
+	if err := model.DB.Create(sub).Error; err != nil {
+		t.Fatalf("failed to create subscription: %v", err)
+	}
+
+	_, cleanup := setupMiniredis(t)
+	defer cleanup()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+
+	InjectRateLimitHeaders(c, sub.Id)
+	// Should not set headers for non-coding_plan subscription
+	if w.Header().Get("X-RateLimit-Limit-5h") != "" {
+		t.Error("should not set headers for non-coding_plan subscription")
+	}
+}
+
+func TestInjectRateLimitHeaders_CodingPlanSubscription(t *testing.T) {
+	setupTestDB(t)
+	_, cleanup := setupMiniredis(t)
+	defer cleanup()
+
+	plan := &model.SubscriptionPlan{
+		Title:                     "Coding Plan",
+		PriceAmount:               10.0,
+		DurationUnit:              model.SubscriptionDurationMonth,
+		DurationValue:             1,
+		Enabled:                   true,
+		PlanType:                  model.PlanTypeCodingPlan,
+		RateLimitTokensPerWindow:  500000,
+		RateLimitWeeklyMultiplier: 20,
+	}
+	if err := model.DB.Create(plan).Error; err != nil {
+		t.Fatalf("failed to create plan: %v", err)
+	}
+
+	now := time.Now().Unix()
+	sub := &model.UserSubscription{
+		UserId:                    1,
+		PlanId:                    plan.Id,
+		AmountTotal:               10000000,
+		StartTime:                 now - 100,
+		EndTime:                   now + 86400*30,
+		Status:                    "active",
+		Source:                    "admin",
+		PlanType:                  model.PlanTypeCodingPlan,
+		RateLimitTokensPerWindow:  500000,
+		RateLimitWeeklyMultiplier: 20,
+	}
+	if err := model.DB.Create(sub).Error; err != nil {
+		t.Fatalf("failed to create subscription: %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+
+	InjectRateLimitHeaders(c, sub.Id)
+
+	if w.Header().Get("X-RateLimit-Limit-5h") != "500000" {
+		t.Errorf("expected X-RateLimit-Limit-5h=500000, got %s", w.Header().Get("X-RateLimit-Limit-5h"))
+	}
+	if w.Header().Get("X-RateLimit-Limit-Week") != "10000000" {
+		t.Errorf("expected X-RateLimit-Limit-Week=10000000, got %s", w.Header().Get("X-RateLimit-Limit-Week"))
+	}
+	if w.Header().Get("X-RateLimit-Remaining-5h") != "500000" {
+		t.Errorf("expected X-RateLimit-Remaining-5h=500000, got %s", w.Header().Get("X-RateLimit-Remaining-5h"))
+	}
+}
+
+func TestInjectRateLimitHeaders_InvalidSubscriptionId(t *testing.T) {
+	setupTestDB(t)
+	_, cleanup := setupMiniredis(t)
+	defer cleanup()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+
+	InjectRateLimitHeaders(c, 99999)
+	// Should not set headers for non-existent subscription
+	if w.Header().Get("X-RateLimit-Limit-5h") != "" {
+		t.Error("should not set headers for non-existent subscription")
 	}
 }

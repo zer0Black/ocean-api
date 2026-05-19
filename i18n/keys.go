@@ -236,6 +236,7 @@ const (
 	MsgRateLimitTokensRequired   = "subscription.rate_limit_tokens_required"
 	MsgRateLimitMultiplierReq    = "subscription.rate_limit_multiplier_required"
 	MsgRateLimitInvalidPlanType  = "subscription.rate_limit_invalid_plan_type"
+	MsgRateLimitExceeded         = "rate_limit.exceeded"
 )
 
 // Setting related messages

@@ -200,6 +200,7 @@ rate_limit.total_reached: "You have reached the total request limit: maximum {{.
 subscription.rate_limit_tokens_required: "rate_limit_tokens_per_window is required for coding_plan and must be >= 1"
 subscription.rate_limit_multiplier_required: "rate_limit_weekly_multiplier is required for coding_plan and must be >= 1"
 subscription.rate_limit_invalid_plan_type: "invalid plan_type: {{.plan_type}}"
+rate_limit.exceeded: "Rate limit exceeded for the current window"
 
 # Setting messages
 setting.invalid_type: "Invalid warning type"

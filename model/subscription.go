@@ -1186,6 +1186,7 @@ func CleanupSubscriptionPreConsumeRecords(olderThanSeconds int64) (int64, error)
 type SubscriptionPlanInfo struct {
 	PlanId    int
 	PlanTitle string
+	PlanType  string
 }
 
 func GetSubscriptionPlanInfoByUserSubscriptionId(userSubscriptionId int) (*SubscriptionPlanInfo, error) {
@@ -1207,6 +1208,7 @@ func GetSubscriptionPlanInfoByUserSubscriptionId(userSubscriptionId int) (*Subsc
 	info := &SubscriptionPlanInfo{
 		PlanId:    sub.PlanId,
 		PlanTitle: plan.Title,
+		PlanType:  plan.PlanType,
 	}
 	_ = getSubscriptionPlanInfoCache().SetWithTTL(cacheKey, *info, subscriptionPlanInfoCacheTTL())
 	return info, nil
@@ -1237,6 +1239,18 @@ func PostConsumeUserSubscriptionDelta(userSubscriptionId int, delta int64) error
 		sub.AmountUsed = newUsed
 		return tx.Save(&sub).Error
 	})
+}
+
+// GetUserSubscriptionById returns a single subscription by its primary key.
+func GetUserSubscriptionById(id int) (*UserSubscription, error) {
+	if id <= 0 {
+		return nil, errors.New("invalid id")
+	}
+	var sub UserSubscription
+	if err := DB.Where("id = ?", id).First(&sub).Error; err != nil {
+		return nil, err
+	}
+	return &sub, nil
 }
 
 // GetActiveCodingPlanSubscriptions returns all active CodingPlan subscriptions for a user.

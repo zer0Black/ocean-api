@@ -158,6 +158,43 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 	// common.SetContextKey(c, constant.ContextKeyTokenCountMeta, meta)
 
+	// TPM rate limit check (before pre-consume)
+	if !priceData.FreeModel {
+		exceeded, rlStatus := service.CheckUserCodingPlanRateLimit(relayInfo.UserId)
+		if exceeded && rlStatus != nil {
+			windowType := "5h"
+			limit := rlStatus.Window5h.Limit
+			remaining := rlStatus.Window5h.Remaining
+			resetAt := rlStatus.Window5h.ResetAt
+			if rlStatus.Window5h.Remaining > 0 && rlStatus.WindowWeek.Remaining == 0 {
+				windowType = "week"
+				limit = rlStatus.WindowWeek.Limit
+				remaining = rlStatus.WindowWeek.Remaining
+				resetAt = rlStatus.WindowWeek.ResetAt
+			}
+			c.Header("Retry-After", fmt.Sprintf("%d", resetAt-time.Now().Unix()))
+			c.JSON(http.StatusTooManyRequests, gin.H{
+				"error": gin.H{
+					"type":    "rate_limit_exceeded",
+					"message": common.TranslateMessage(c, "rate_limit.exceeded"),
+					"rate_limit": gin.H{
+						"limit_type": windowType,
+						"limit":      limit,
+						"remaining":  remaining,
+						"reset_at":   resetAt,
+					},
+				},
+			})
+			newAPIError = types.NewErrorWithStatusCode(
+				fmt.Errorf("rate limit exceeded"),
+				types.ErrorCodeRateLimitExceeded,
+				http.StatusTooManyRequests,
+				types.ErrOptionWithSkipRetry(),
+			)
+			return
+		}
+	}
+
 	if priceData.FreeModel {
 		logger.LogInfo(c, fmt.Sprintf("模型 %s 免费，跳过预扣费", relayInfo.OriginModelName))
 	} else {

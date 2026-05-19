@@ -12,6 +12,7 @@ import (
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/gin-gonic/gin"
 	"github.com/go-redis/redis/v8"
 )
 
@@ -274,4 +275,44 @@ func ValidateRateLimitParams(planType string, tokensPerWindow int, weeklyMultipl
 	default:
 		return &I18nError{Key: i18n.MsgRateLimitInvalidPlanType, Args: map[string]any{"plan_type": planType}}
 	}
+}
+
+// CheckUserCodingPlanRateLimit checks if the user has exceeded rate limits
+// on any of their active CodingPlan subscriptions.
+func CheckUserCodingPlanRateLimit(userId int) (bool, *RateLimitStatus) {
+	if userId <= 0 {
+		return false, nil
+	}
+	subs, err := model.GetActiveCodingPlanSubscriptions(userId)
+	if err != nil || len(subs) == 0 {
+		return false, nil
+	}
+	for _, sub := range subs {
+		status, exceeded := CheckSubscriptionRateLimit(sub.Id, sub.RateLimitTokensPerWindow, sub.RateLimitWeeklyMultiplier)
+		if exceeded {
+			return true, status
+		}
+	}
+	return false, nil
+}
+
+// InjectRateLimitHeaders injects X-RateLimit-* response headers for a subscription.
+func InjectRateLimitHeaders(c *gin.Context, subscriptionId int) {
+	if common.RDB == nil || c == nil {
+		return
+	}
+	sub, err := model.GetUserSubscriptionById(subscriptionId)
+	if err != nil || sub == nil || sub.PlanType != model.PlanTypeCodingPlan {
+		return
+	}
+	status, _ := CheckSubscriptionRateLimit(sub.Id, sub.RateLimitTokensPerWindow, sub.RateLimitWeeklyMultiplier)
+	if status == nil {
+		return
+	}
+	c.Header("X-RateLimit-Limit-5h", strconv.Itoa(status.Window5h.Limit))
+	c.Header("X-RateLimit-Remaining-5h", strconv.Itoa(status.Window5h.Remaining))
+	c.Header("X-RateLimit-Reset-5h", strconv.FormatInt(status.Window5h.ResetAt, 10))
+	c.Header("X-RateLimit-Limit-Week", strconv.Itoa(status.WindowWeek.Limit))
+	c.Header("X-RateLimit-Remaining-Week", strconv.Itoa(status.WindowWeek.Remaining))
+	c.Header("X-RateLimit-Reset-Week", strconv.FormatInt(status.WindowWeek.ResetAt, 10))
 }

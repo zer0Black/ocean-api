@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/QuantumNous/new-api/logger"
+	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
@@ -56,6 +57,21 @@ func SettleBilling(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, actualQuo
 
 		if err := relayInfo.Billing.Settle(actualQuota); err != nil {
 			return err
+		}
+
+		// Record rate limit usage for CodingPlan subscriptions
+		if relayInfo.BillingSource == "subscription" && relayInfo.SubscriptionId > 0 && relayInfo.SubscriptionPlanType == model.PlanTypeCodingPlan {
+			if actualQuota > 0 {
+				go func() {
+					if err := RecordRateLimitUsage(relayInfo.SubscriptionId, relayInfo.RequestId, actualQuota); err != nil {
+						logger.LogError(nil, fmt.Sprintf("rate limit usage record failed for subscription %d: %v", relayInfo.SubscriptionId, err))
+					}
+				}()
+			}
+		}
+		// Inject rate limit response headers (note: headers may not take effect for streaming responses as they are already flushed)
+		if relayInfo.BillingSource == "subscription" && relayInfo.SubscriptionId > 0 {
+			InjectRateLimitHeaders(ctx, relayInfo.SubscriptionId)
 		}
 
 		// 发送额度通知（订阅计费使用订阅剩余额度）
