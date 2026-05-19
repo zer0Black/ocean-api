@@ -54,7 +54,7 @@ func runSubscriptionQuotaResetOnce() {
 	totalReset := 0
 	totalExpired := 0
 	for {
-		n, err := model.ExpireDueSubscriptions(subscriptionResetBatchSize)
+		n, expiredIds, err := model.ExpireDueSubscriptions(subscriptionResetBatchSize)
 		if err != nil {
 			logger.LogWarn(ctx, fmt.Sprintf("subscription expire task failed: %v", err))
 			return
@@ -63,6 +63,14 @@ func runSubscriptionQuotaResetOnce() {
 			break
 		}
 		totalExpired += n
+		// Cleanup rate limit data for expired subscriptions
+		for _, subId := range expiredIds {
+			go func(id int) {
+				if err := CleanupRateLimitData(id); err != nil {
+					logger.LogError(ctx, fmt.Sprintf("rate limit cleanup failed for subscription %d: %v", id, err))
+				}
+			}(subId)
+		}
 		if n < subscriptionResetBatchSize {
 			break
 		}

@@ -418,6 +418,12 @@ func AdminInvalidateUserSubscription(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+
+	// Best-effort rate limit data cleanup
+	go func() {
+		_ = service.CleanupRateLimitData(subId)
+	}()
+
 	if msg != "" {
 		common.ApiSuccess(c, gin.H{"message": msg})
 		return

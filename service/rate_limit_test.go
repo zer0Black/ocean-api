@@ -1132,3 +1132,113 @@ func TestValidateRateLimitParams_CodingPlanExactOne(t *testing.T) {
 		t.Errorf("CodingPlan with tokens=1 and multiplier=1 should pass: %v", err)
 	}
 }
+
+// --- T6: 订阅快照 + 过期清理钩子测试 ---
+
+func TestCleanupOnSubscriptionExpiry(t *testing.T) {
+	mr, err := miniredis.Run()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer mr.Close()
+
+	// Pre-populate rate limit keys for subscription 1
+	mr.ZAdd("rate_limit:1:5h:2", 100.0, "req_1:100")
+	mr.ZAdd("rate_limit:1:week:2026-W20", 200.0, "req_2:200")
+
+	origClient := common.RDB
+	common.RDB = redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	defer func() { common.RDB = origClient }()
+
+	err = CleanupRateLimitData(1)
+	if err != nil {
+		t.Errorf("CleanupRateLimitData failed: %v", err)
+	}
+
+	// Verify keys are removed
+	if mr.Exists("rate_limit:1:5h:2") {
+		t.Error("expected 5h key to be deleted after cleanup")
+	}
+	if mr.Exists("rate_limit:1:week:2026-W20") {
+		t.Error("expected week key to be deleted after cleanup")
+	}
+}
+
+// --- T6: 补充测试 ---
+
+func TestCleanupOnSubscriptionExpiry_MultipleWindowKeys(t *testing.T) {
+	mr, err := miniredis.Run()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer mr.Close()
+
+	// Pre-populate rate limit keys across multiple windows for subscription 42
+	mr.ZAdd("rate_limit:42:5h:0", 100.0, "req_1:100")
+	mr.ZAdd("rate_limit:42:5h:1", 200.0, "req_2:200")
+	mr.ZAdd("rate_limit:42:5h:4", 300.0, "req_3:300")
+	mr.ZAdd("rate_limit:42:week:2026-W19", 150.0, "req_4:150")
+	mr.ZAdd("rate_limit:42:week:2026-W20", 250.0, "req_5:250")
+
+	origClient := common.RDB
+	common.RDB = redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	defer func() { common.RDB = origClient }()
+
+	err = CleanupRateLimitData(42)
+	if err != nil {
+		t.Errorf("CleanupRateLimitData failed: %v", err)
+	}
+
+	// Verify all 5 keys are removed
+	for _, key := range []string{
+		"rate_limit:42:5h:0",
+		"rate_limit:42:5h:1",
+		"rate_limit:42:5h:4",
+		"rate_limit:42:week:2026-W19",
+		"rate_limit:42:week:2026-W20",
+	} {
+		if mr.Exists(key) {
+			t.Errorf("expected key %s to be deleted after cleanup", key)
+		}
+	}
+}
+
+func TestCleanupOnSubscriptionExpiry_DoesNotAffectOtherSubscriptions(t *testing.T) {
+	mr, err := miniredis.Run()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer mr.Close()
+
+	// Create keys for both subscription 1 and subscription 2
+	mr.ZAdd("rate_limit:1:5h:2", 100.0, "req_1:100")
+	mr.ZAdd("rate_limit:2:5h:2", 200.0, "req_2:200")
+	mr.ZAdd("rate_limit:1:week:2026-W20", 300.0, "req_3:300")
+	mr.ZAdd("rate_limit:2:week:2026-W20", 400.0, "req_4:400")
+
+	origClient := common.RDB
+	common.RDB = redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	defer func() { common.RDB = origClient }()
+
+	// Cleanup only subscription 1
+	err = CleanupRateLimitData(1)
+	if err != nil {
+		t.Errorf("CleanupRateLimitData failed: %v", err)
+	}
+
+	// Subscription 1 keys should be gone
+	if mr.Exists("rate_limit:1:5h:2") {
+		t.Error("expected subscription 1 5h key to be deleted")
+	}
+	if mr.Exists("rate_limit:1:week:2026-W20") {
+		t.Error("expected subscription 1 week key to be deleted")
+	}
+
+	// Subscription 2 keys should remain
+	if !mr.Exists("rate_limit:2:5h:2") {
+		t.Error("expected subscription 2 5h key to remain")
+	}
+	if !mr.Exists("rate_limit:2:week:2026-W20") {
+		t.Error("expected subscription 2 week key to remain")
+	}
+}

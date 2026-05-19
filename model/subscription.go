@@ -849,7 +849,7 @@ type SubscriptionPreConsumeResult struct {
 }
 
 // ExpireDueSubscriptions marks expired subscriptions and handles group downgrade.
-func ExpireDueSubscriptions(limit int) (int, error) {
+func ExpireDueSubscriptions(limit int) (int, []int, error) {
 	if limit <= 0 {
 		limit = 200
 	}
@@ -859,12 +859,13 @@ func ExpireDueSubscriptions(limit int) (int, error) {
 		Order("end_time asc, id asc").
 		Limit(limit).
 		Find(&subs).Error; err != nil {
-		return 0, err
+		return 0, nil, err
 	}
 	if len(subs) == 0 {
-		return 0, nil
+		return 0, nil, nil
 	}
 	expiredCount := 0
+	expiredIds := make([]int, 0)
 	userIds := make(map[int]struct{}, len(subs))
 	for _, sub := range subs {
 		if sub.UserId > 0 {
@@ -926,13 +927,17 @@ func ExpireDueSubscriptions(limit int) (int, error) {
 			return nil
 		})
 		if err != nil {
-			return expiredCount, err
+			return expiredCount, expiredIds, err
 		}
 		if cacheGroup != "" {
 			_ = UpdateUserGroupCache(userId, cacheGroup)
 		}
 	}
-	return expiredCount, nil
+	// Collect expired subscription IDs from the candidate list.
+	for _, sub := range subs {
+		expiredIds = append(expiredIds, sub.Id)
+	}
+	return expiredCount, expiredIds, nil
 }
 
 // SubscriptionPreConsumeRecord stores idempotent pre-consume operations per request.
