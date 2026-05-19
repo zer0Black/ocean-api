@@ -40,6 +40,9 @@ export const subscriptionPlanSchema = z.object({
   upgrade_group: z.string().optional(),
   stripe_price_id: z.string().optional(),
   creem_product_id: z.string().optional(),
+  plan_type: z.enum(['api', 'coding_plan']).default('api'),
+  rate_limit_tokens_per_window: z.number().default(0),
+  rate_limit_weekly_multiplier: z.number().default(0),
 })
 
 export type SubscriptionPlan = z.infer<typeof subscriptionPlanSchema>
@@ -63,6 +66,9 @@ export const userSubscriptionSchema = z.object({
   amount_total: z.number(),
   amount_used: z.number(),
   next_reset_time: z.number().optional(),
+  plan_type: z.string().default('api'),
+  rate_limit_tokens_per_window: z.number().default(0),
+  rate_limit_weekly_multiplier: z.number().default(0),
 })
 
 export type UserSubscription = z.infer<typeof userSubscriptionSchema>
@@ -119,3 +125,22 @@ export interface SelfSubscriptionData {
 // ============================================================================
 
 export type SubscriptionsDialogType = 'create' | 'update' | 'toggle-status'
+
+// ============================================================================
+// Rate Limit Types
+// ============================================================================
+
+export interface WindowStatus {
+  limit: number
+  used: number
+  remaining: number
+  reset_at: number
+}
+
+export interface RateLimitStatus {
+  subscription_id: number
+  plan_title: string
+  plan_type: string
+  window_5h: WindowStatus
+  window_week: WindowStatus
+}

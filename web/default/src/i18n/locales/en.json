@@ -4476,6 +4476,23 @@
     "Zero retention": "Zero retention",
     "Zhipu": "Zhipu",
     "Zhipu V4": "Zhipu V4",
-    "Zoom": "Zoom"
+    "Zoom": "Zoom",
+    "Plan Type": "Plan Type",
+    "API Plan": "API Plan",
+    "Coding Plan": "Coding Plan",
+    "Rate Limit": "Rate Limit",
+    "5-Hour Token Limit": "5-Hour Token Limit",
+    "Token consumption limit per 5-hour window": "Token consumption limit per 5-hour window",
+    "Weekly Multiplier": "Weekly Multiplier",
+    "Weekly limit = 5-hour limit × multiplier": "Weekly limit = 5-hour limit × multiplier",
+    "Weekly Limit": "Weekly Limit",
+    "5h Window": "5h Window",
+    "Weekly Window": "Weekly Window",
+    "used": "used",
+    "remaining": "remaining",
+    "resets in": "resets in",
+    "tokens": "tokens",
+    "Per 5h allowance": "Per 5h allowance",
+    "Weekly allowance": "Weekly allowance"
   }
 }

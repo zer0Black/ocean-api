@@ -19,7 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { useEffect, useState } from 'react'
 import { useForm, type Resolver } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { CalendarClock, CreditCard, RefreshCw, Settings2 } from 'lucide-react'
+import { CalendarClock, CreditCard, Gauge, RefreshCw, Settings2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -103,6 +103,7 @@ export function SubscriptionsMutateDrawer({
 
   const durationUnit = form.watch('duration_unit')
   const resetPeriod = form.watch('quota_reset_period')
+  const planType = form.watch('plan_type')
 
   const onSubmit = async (values: PlanFormValues) => {
     setIsSubmitting(true)
@@ -510,6 +511,106 @@ export function SubscriptionsMutateDrawer({
                   )}
                 />
               </div>
+            </div>
+
+            {/* Rate Limit Config */}
+            <div className='space-y-4'>
+              <h3 className='flex items-center gap-2 text-sm font-medium'>
+                <Gauge className='h-4 w-4' />
+                {t('Rate Limit')}
+              </h3>
+
+              <FormField
+                control={form.control}
+                name='plan_type'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('Plan Type')}</FormLabel>
+                    <Select
+                      items={[
+                        { value: 'api', label: t('API Plan') },
+                        { value: 'coding_plan', label: t('Coding Plan') },
+                      ]}
+                      onValueChange={field.onChange}
+                      value={field.value}
+                    >
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent alignItemWithTrigger={false}>
+                        <SelectGroup>
+                          <SelectItem value='api'>{t('API Plan')}</SelectItem>
+                          <SelectItem value='coding_plan'>
+                            {t('Coding Plan')}
+                          </SelectItem>
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {planType === 'coding_plan' && (
+                <div className='grid grid-cols-1 gap-3 sm:grid-cols-2'>
+                  <FormField
+                    control={form.control}
+                    name='rate_limit_tokens_per_window'
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t('5-Hour Token Limit')}</FormLabel>
+                        <FormControl>
+                          <Input
+                            {...field}
+                            type='number'
+                            min={0}
+                            onChange={(e) =>
+                              field.onChange(parseInt(e.target.value, 10) || 0)
+                            }
+                          />
+                        </FormControl>
+                        <FormDescription>
+                          {t(
+                            'Token consumption limit per 5-hour window'
+                          )}
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name='rate_limit_weekly_multiplier'
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t('Weekly Multiplier')}</FormLabel>
+                        <FormControl>
+                          <Input
+                            {...field}
+                            type='number'
+                            min={0}
+                            step='0.1'
+                            onChange={(e) =>
+                              field.onChange(
+                                parseFloat(e.target.value) || 0
+                              )
+                            }
+                          />
+                        </FormControl>
+                        <FormDescription>
+                          {t(
+                            'Weekly limit = 5-hour limit × multiplier'
+                          )}
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+              )}
             </div>
 
             {/* Payment Config */}

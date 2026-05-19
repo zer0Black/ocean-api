@@ -43,6 +43,9 @@ export function getPlanFormSchema(t: TFunction) {
     upgrade_group: z.string().optional(),
     stripe_price_id: z.string().optional(),
     creem_product_id: z.string().optional(),
+    plan_type: z.enum(['api', 'coding_plan']).default('api'),
+    rate_limit_tokens_per_window: z.coerce.number().min(0).default(0),
+    rate_limit_weekly_multiplier: z.coerce.number().min(0).default(0),
   })
 }
 
@@ -64,6 +67,9 @@ export const PLAN_FORM_DEFAULTS: PlanFormValues = {
   upgrade_group: '',
   stripe_price_id: '',
   creem_product_id: '',
+  plan_type: 'api' as const,
+  rate_limit_tokens_per_window: 0,
+  rate_limit_weekly_multiplier: 0,
 }
 
 export function planToFormValues(plan: SubscriptionPlan): PlanFormValues {
@@ -83,6 +89,9 @@ export function planToFormValues(plan: SubscriptionPlan): PlanFormValues {
     upgrade_group: plan.upgrade_group || '',
     stripe_price_id: plan.stripe_price_id || '',
     creem_product_id: plan.creem_product_id || '',
+    plan_type: plan.plan_type || 'api',
+    rate_limit_tokens_per_window: Number(plan.rate_limit_tokens_per_window || 0),
+    rate_limit_weekly_multiplier: Number(plan.rate_limit_weekly_multiplier || 0),
   }
 }
 
@@ -103,6 +112,15 @@ export function formValuesToPlanPayload(values: PlanFormValues): PlanPayload {
       max_purchase_per_user: Number(values.max_purchase_per_user || 0),
       total_amount: Number(values.total_amount || 0),
       upgrade_group: values.upgrade_group || '',
+      plan_type: values.plan_type || 'api',
+      rate_limit_tokens_per_window:
+        values.plan_type === 'coding_plan'
+          ? Number(values.rate_limit_tokens_per_window || 0)
+          : 0,
+      rate_limit_weekly_multiplier:
+        values.plan_type === 'coding_plan'
+          ? Number(values.rate_limit_weekly_multiplier || 0)
+          : 0,
     },
   }
 }
