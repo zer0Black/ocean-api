@@ -32,6 +32,12 @@ const (
 	SubscriptionResetCustom  = "custom"
 )
 
+// Plan type constants
+const (
+	PlanTypeAPI        = "api"
+	PlanTypeCodingPlan = "coding_plan"
+)
+
 var (
 	ErrSubscriptionOrderNotFound      = errors.New("subscription order not found")
 	ErrSubscriptionOrderStatusInvalid = errors.New("subscription order status invalid")
@@ -175,6 +181,13 @@ type SubscriptionPlan struct {
 	QuotaResetPeriod        string `json:"quota_reset_period" gorm:"type:varchar(16);default:'never'"`
 	QuotaResetCustomSeconds int64  `json:"quota_reset_custom_seconds" gorm:"type:bigint;default:0"`
 
+	// Plan type: "api" (API quota-based) or "coding_plan" (token rate-limited)
+	PlanType string `json:"plan_type" gorm:"type:varchar(32);not null;default:'api'"`
+	// 5-hour window token limit (only effective for coding_plan, 0 for api)
+	RateLimitTokensPerWindow int `json:"rate_limit_tokens_per_window" gorm:"type:int;not null;default:0"`
+	// Weekly multiplier: weekly_limit = tokens_per_window × multiplier (only effective for coding_plan, 0 for api)
+	RateLimitWeeklyMultiplier int `json:"rate_limit_weekly_multiplier" gorm:"type:int;not null;default:0"`
+
 	CreatedAt int64 `json:"created_at" gorm:"bigint"`
 	UpdatedAt int64 `json:"updated_at" gorm:"bigint"`
 }
@@ -250,6 +263,11 @@ type UserSubscription struct {
 
 	UpgradeGroup  string `json:"upgrade_group" gorm:"type:varchar(64);default:''"`
 	PrevUserGroup string `json:"prev_user_group" gorm:"type:varchar(64);default:''"`
+
+	// Snapshot from SubscriptionPlan at purchase time
+	PlanType                  string `json:"plan_type" gorm:"type:varchar(32);not null;default:'api'"`
+	RateLimitTokensPerWindow  int    `json:"rate_limit_tokens_per_window" gorm:"type:int;not null;default:0"`
+	RateLimitWeeklyMultiplier int    `json:"rate_limit_weekly_multiplier" gorm:"type:int;not null;default:0"`
 
 	CreatedAt int64 `json:"created_at" gorm:"bigint"`
 	UpdatedAt int64 `json:"updated_at" gorm:"bigint"`
@@ -484,20 +502,23 @@ func CreateUserSubscriptionFromPlanTx(tx *gorm.DB, userId int, plan *Subscriptio
 		}
 	}
 	sub := &UserSubscription{
-		UserId:        userId,
-		PlanId:        plan.Id,
-		AmountTotal:   plan.TotalAmount,
-		AmountUsed:    0,
-		StartTime:     now.Unix(),
-		EndTime:       endUnix,
-		Status:        "active",
-		Source:        source,
-		LastResetTime: lastReset,
-		NextResetTime: nextReset,
-		UpgradeGroup:  upgradeGroup,
-		PrevUserGroup: prevGroup,
-		CreatedAt:     common.GetTimestamp(),
-		UpdatedAt:     common.GetTimestamp(),
+		UserId:                    userId,
+		PlanId:                    plan.Id,
+		AmountTotal:               plan.TotalAmount,
+		AmountUsed:                0,
+		StartTime:                 now.Unix(),
+		EndTime:                   endUnix,
+		Status:                    "active",
+		Source:                    source,
+		LastResetTime:             lastReset,
+		NextResetTime:             nextReset,
+		UpgradeGroup:              upgradeGroup,
+		PrevUserGroup:             prevGroup,
+		PlanType:                  plan.PlanType,
+		RateLimitTokensPerWindow:  plan.RateLimitTokensPerWindow,
+		RateLimitWeeklyMultiplier: plan.RateLimitWeeklyMultiplier,
+		CreatedAt:                 common.GetTimestamp(),
+		UpdatedAt:                 common.GetTimestamp(),
 	}
 	if err := tx.Create(sub).Error; err != nil {
 		return nil, err
