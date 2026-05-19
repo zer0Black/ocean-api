@@ -3,6 +3,10 @@ package service
 import (
 	"testing"
 	"time"
+
+	"github.com/QuantumNous/new-api/common"
+	"github.com/alicebob/miniredis/v2"
+	"github.com/go-redis/redis/v8"
 )
 
 func TestCalc5hWindowKey(t *testing.T) {
@@ -205,5 +209,403 @@ func TestRateLimitRedisKeys_BoundaryValues(t *testing.T) {
 	k5h2 := RateLimitRedisKey5h(999, 4)
 	if k5h2 != "rate_limit:999:5h:4" {
 		t.Errorf("5h key = %s, want rate_limit:999:5h:4", k5h2)
+	}
+}
+
+// --- T3: 限速服务业务操作测试 ---
+
+// setupMiniredis creates a miniredis server and sets common.RDB to point to it.
+// Returns the miniredis instance and a cleanup function to restore the original RDB.
+func setupMiniredis(t *testing.T) (*miniredis.Miniredis, func()) {
+	t.Helper()
+	mr, err := miniredis.Run()
+	if err != nil {
+		t.Fatalf("failed to start miniredis: %v", err)
+	}
+	origRDB := common.RDB
+	common.RDB = redis.NewClient(&redis.Options{
+		Addr: mr.Addr(),
+	})
+	return mr, func() {
+		common.RDB = origRDB
+		mr.Close()
+	}
+}
+
+func TestCheckRateLimit_NotExceeded(t *testing.T) {
+	mr, cleanup := setupMiniredis(t)
+	defer cleanup()
+
+	subId := 1
+	limit5h := 500000
+	weeklyMultiplier := 20
+
+	now := time.Now().UTC()
+	windowKey5h := Calc5hWindowKey(now.Hour())
+	weekKey := CalcWeekWindowKey(now)
+
+	// Pre-populate Redis with some usage data (100 tokens used in each window)
+	redisKey5h := RateLimitRedisKey5h(subId, windowKey5h)
+	redisKeyWeek := RateLimitRedisKeyWeek(subId, weekKey)
+	mr.ZAdd(redisKey5h, 100.0, "req_1:100")
+	mr.ZAdd(redisKeyWeek, 100.0, "req_1:100")
+
+	status, exceeded := CheckSubscriptionRateLimit(subId, limit5h, weeklyMultiplier)
+	if exceeded {
+		t.Error("should not be exceeded with low usage")
+	}
+	if status.Window5h.Used != 100 {
+		t.Errorf("5h used = %d, want 100", status.Window5h.Used)
+	}
+	if status.Window5h.Remaining != limit5h-100 {
+		t.Errorf("5h remaining = %d, want %d", status.Window5h.Remaining, limit5h-100)
+	}
+	if status.Window5h.Limit != limit5h {
+		t.Errorf("5h limit = %d, want %d", status.Window5h.Limit, limit5h)
+	}
+	weekLimit := limit5h * weeklyMultiplier
+	if status.WindowWeek.Used != 100 {
+		t.Errorf("week used = %d, want 100", status.WindowWeek.Used)
+	}
+	if status.WindowWeek.Limit != weekLimit {
+		t.Errorf("week limit = %d, want %d", status.WindowWeek.Limit, weekLimit)
+	}
+}
+
+func TestCheckRateLimit_Exceeded5h(t *testing.T) {
+	mr, cleanup := setupMiniredis(t)
+	defer cleanup()
+
+	subId := 1
+	limit5h := 100
+	weeklyMultiplier := 20
+
+	now := time.Now().UTC()
+	windowKey5h := Calc5hWindowKey(now.Hour())
+	redisKey5h := RateLimitRedisKey5h(subId, windowKey5h)
+
+	// Exceed 5h limit
+	mr.ZAdd(redisKey5h, 100.0, "req_1:150")
+
+	status, exceeded := CheckSubscriptionRateLimit(subId, limit5h, weeklyMultiplier)
+	if !exceeded {
+		t.Error("should be exceeded when 5h usage >= limit")
+	}
+	if status.Window5h.Remaining != 0 {
+		t.Errorf("5h remaining should be 0 when exceeded, got %d", status.Window5h.Remaining)
+	}
+}
+
+func TestCheckRateLimit_ExceededWeek(t *testing.T) {
+	mr, cleanup := setupMiniredis(t)
+	defer cleanup()
+
+	subId := 1
+	limit5h := 500
+	weeklyMultiplier := 2 // week limit = 1000
+
+	now := time.Now().UTC()
+	weekKey := CalcWeekWindowKey(now)
+	redisKeyWeek := RateLimitRedisKeyWeek(subId, weekKey)
+
+	// Exceed week limit (week limit = 1000, set usage to 1200)
+	mr.ZAdd(redisKeyWeek, 100.0, "req_1:1200")
+
+	status, exceeded := CheckSubscriptionRateLimit(subId, limit5h, weeklyMultiplier)
+	if !exceeded {
+		t.Error("should be exceeded when weekly usage >= limit")
+	}
+	if status.WindowWeek.Remaining != 0 {
+		t.Errorf("week remaining should be 0 when exceeded, got %d", status.WindowWeek.Remaining)
+	}
+}
+
+func TestRecordRateLimitUsage(t *testing.T) {
+	mr, cleanup := setupMiniredis(t)
+	defer cleanup()
+
+	subId := 1
+	requestId := "req_test_001"
+	tokenCount := 5000
+
+	err := RecordRateLimitUsage(subId, requestId, tokenCount)
+	if err != nil {
+		t.Errorf("RecordRateLimitUsage failed: %v", err)
+	}
+
+	now := time.Now().UTC()
+	windowKey5h := Calc5hWindowKey(now.Hour())
+	weekKey := CalcWeekWindowKey(now)
+
+	// Verify data was written to both windows
+	key5h := RateLimitRedisKey5h(subId, windowKey5h)
+	keyWeek := RateLimitRedisKeyWeek(subId, weekKey)
+
+	if !mr.Exists(key5h) {
+		t.Error("expected 5h key to exist after recording")
+	}
+	if !mr.Exists(keyWeek) {
+		t.Error("expected week key to exist after recording")
+	}
+
+	// Verify the member exists in the sorted set
+	members, _ := mr.ZMembers(key5h)
+	found := false
+	for _, m := range members {
+		if m == requestId+":5000" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected member %s:5000 in 5h sorted set, members: %v", requestId, members)
+	}
+}
+
+func TestRecordRateLimitUsage_MultipleRecords(t *testing.T) {
+	_, cleanup := setupMiniredis(t)
+	defer cleanup()
+
+	subId := 1
+
+	err := RecordRateLimitUsage(subId, "req_1", 100)
+	if err != nil {
+		t.Fatalf("first record failed: %v", err)
+	}
+	err = RecordRateLimitUsage(subId, "req_2", 200)
+	if err != nil {
+		t.Fatalf("second record failed: %v", err)
+	}
+	err = RecordRateLimitUsage(subId, "req_3", 300)
+	if err != nil {
+		t.Fatalf("third record failed: %v", err)
+	}
+
+	now := time.Now().UTC()
+	windowKey5h := Calc5hWindowKey(now.Hour())
+	key5h := RateLimitRedisKey5h(subId, windowKey5h)
+
+	// queryWindowUsage should sum all token counts
+	used := queryWindowUsage(key5h)
+	if used != 600 {
+		t.Errorf("total used = %d, want 600", used)
+	}
+}
+
+func TestCleanupRateLimitData(t *testing.T) {
+	mr, cleanup := setupMiniredis(t)
+	defer cleanup()
+
+	subId := 1
+
+	// Create some rate limit keys
+	now := time.Now().UTC()
+	key5h := RateLimitRedisKey5h(subId, Calc5hWindowKey(now.Hour()))
+	keyWeek := RateLimitRedisKeyWeek(subId, CalcWeekWindowKey(now))
+
+	mr.ZAdd(key5h, 100.0, "req_1:100")
+	mr.ZAdd(keyWeek, 100.0, "req_1:100")
+
+	if !mr.Exists(key5h) {
+		t.Fatal("5h key should exist before cleanup")
+	}
+	if !mr.Exists(keyWeek) {
+		t.Fatal("week key should exist before cleanup")
+	}
+
+	err := CleanupRateLimitData(subId)
+	if err != nil {
+		t.Errorf("CleanupRateLimitData failed: %v", err)
+	}
+
+	if mr.Exists(key5h) {
+		t.Error("5h key should be deleted after cleanup")
+	}
+	if mr.Exists(keyWeek) {
+		t.Error("week key should be deleted after cleanup")
+	}
+}
+
+func TestCleanupRateLimitData_DoesNotAffectOtherSubscriptions(t *testing.T) {
+	mr, cleanup := setupMiniredis(t)
+	defer cleanup()
+
+	subId1 := 1
+	subId2 := 2
+
+	now := time.Now().UTC()
+	key1 := RateLimitRedisKey5h(subId1, Calc5hWindowKey(now.Hour()))
+	key2 := RateLimitRedisKey5h(subId2, Calc5hWindowKey(now.Hour()))
+
+	mr.ZAdd(key1, 100.0, "req_1:100")
+	mr.ZAdd(key2, 100.0, "req_2:100")
+
+	err := CleanupRateLimitData(subId1)
+	if err != nil {
+		t.Fatalf("CleanupRateLimitData failed: %v", err)
+	}
+
+	if mr.Exists(key1) {
+		t.Error("subId1 key should be deleted")
+	}
+	if !mr.Exists(key2) {
+		t.Error("subId2 key should NOT be deleted")
+	}
+}
+
+// --- T3: 补充边界与异常路径测试 ---
+
+func TestCheckRateLimit_ZeroLimits(t *testing.T) {
+	// limit5h <= 0 should return not exceeded with zeroed status
+	status, exceeded := CheckSubscriptionRateLimit(1, 0, 20)
+	if exceeded {
+		t.Error("should not be exceeded with zero 5h limit")
+	}
+	if status.Window5h.Used != 0 || status.Window5h.Limit != 0 {
+		t.Errorf("expected zeroed 5h window status, got %+v", status.Window5h)
+	}
+	if status.WindowWeek.Used != 0 || status.WindowWeek.Limit != 0 {
+		t.Errorf("expected zeroed week window status, got %+v", status.WindowWeek)
+	}
+
+	// weeklyMultiplier <= 0 should also return not exceeded
+	_, exceeded2 := CheckSubscriptionRateLimit(1, 100, 0)
+	if exceeded2 {
+		t.Error("should not be exceeded with zero weekly multiplier")
+	}
+
+	// Both zero
+	_, exceeded3 := CheckSubscriptionRateLimit(1, 0, 0)
+	if exceeded3 {
+		t.Error("should not be exceeded with all zeros")
+	}
+
+	// Negative values
+	_, exceeded4 := CheckSubscriptionRateLimit(1, -100, -5)
+	if exceeded4 {
+		t.Error("should not be exceeded with negative limits")
+	}
+}
+
+func TestCheckRateLimit_NoData(t *testing.T) {
+	_, cleanup := setupMiniredis(t)
+	defer cleanup()
+
+	// Redis is empty, usage should be 0
+	status, exceeded := CheckSubscriptionRateLimit(1, 1000, 10)
+	if exceeded {
+		t.Error("should not be exceeded with no data")
+	}
+	if status.Window5h.Used != 0 {
+		t.Errorf("5h used = %d, want 0 with no data", status.Window5h.Used)
+	}
+	if status.WindowWeek.Used != 0 {
+		t.Errorf("week used = %d, want 0 with no data", status.WindowWeek.Used)
+	}
+}
+
+func TestCheckRateLimit_NilRDB(t *testing.T) {
+	origRDB := common.RDB
+	common.RDB = nil
+	defer func() { common.RDB = origRDB }()
+
+	status, exceeded := CheckSubscriptionRateLimit(1, 100, 10)
+	if exceeded {
+		t.Error("should not be exceeded with nil RDB")
+	}
+	if status.Window5h.Used != 0 {
+		t.Errorf("5h used = %d, want 0 with nil RDB", status.Window5h.Used)
+	}
+}
+
+func TestRecordRateLimitUsage_InvalidInput(t *testing.T) {
+	_, cleanup := setupMiniredis(t)
+	defer cleanup()
+
+	// subscriptionId <= 0 should be no-op
+	err := RecordRateLimitUsage(0, "req_1", 100)
+	if err != nil {
+		t.Errorf("should not error with zero subscriptionId: %v", err)
+	}
+	err = RecordRateLimitUsage(-1, "req_1", 100)
+	if err != nil {
+		t.Errorf("should not error with negative subscriptionId: %v", err)
+	}
+
+	// tokenCount <= 0 should be no-op
+	err = RecordRateLimitUsage(1, "req_1", 0)
+	if err != nil {
+		t.Errorf("should not error with zero tokenCount: %v", err)
+	}
+	err = RecordRateLimitUsage(1, "req_1", -50)
+	if err != nil {
+		t.Errorf("should not error with negative tokenCount: %v", err)
+	}
+}
+
+func TestRecordRateLimitUsage_NilRDB(t *testing.T) {
+	origRDB := common.RDB
+	common.RDB = nil
+	defer func() { common.RDB = origRDB }()
+
+	err := RecordRateLimitUsage(1, "req_1", 100)
+	if err != nil {
+		t.Errorf("should not error with nil RDB: %v", err)
+	}
+}
+
+func TestCleanupRateLimitData_NoKeys(t *testing.T) {
+	_, cleanup := setupMiniredis(t)
+	defer cleanup()
+
+	// No keys exist for this subscription, should succeed silently
+	err := CleanupRateLimitData(999)
+	if err != nil {
+		t.Errorf("CleanupRateLimitData should succeed with no keys: %v", err)
+	}
+}
+
+func TestCleanupRateLimitData_NilRDB(t *testing.T) {
+	origRDB := common.RDB
+	common.RDB = nil
+	defer func() { common.RDB = origRDB }()
+
+	err := CleanupRateLimitData(1)
+	if err != nil {
+		t.Errorf("CleanupRateLimitData should not error with nil RDB: %v", err)
+	}
+}
+
+func TestQueryWindowUsage_NilRDB(t *testing.T) {
+	origRDB := common.RDB
+	common.RDB = nil
+	defer func() { common.RDB = origRDB }()
+
+	used := queryWindowUsage("rate_limit:1:5h:0")
+	if used != 0 {
+		t.Errorf("queryWindowUsage with nil RDB = %d, want 0", used)
+	}
+}
+
+func TestCheckRateLimit_ExactAtLimit(t *testing.T) {
+	mr, cleanup := setupMiniredis(t)
+	defer cleanup()
+
+	subId := 1
+	limit5h := 100
+	weeklyMultiplier := 10
+
+	now := time.Now().UTC()
+	redisKey5h := RateLimitRedisKey5h(subId, Calc5hWindowKey(now.Hour()))
+
+	// Exactly at 5h limit
+	mr.ZAdd(redisKey5h, 100.0, "req_1:100")
+
+	status, exceeded := CheckSubscriptionRateLimit(subId, limit5h, weeklyMultiplier)
+	if !exceeded {
+		t.Error("should be exceeded when usage equals limit exactly")
+	}
+	if status.Window5h.Remaining != 0 {
+		t.Errorf("remaining = %d, want 0 at exact limit", status.Window5h.Remaining)
 	}
 }
