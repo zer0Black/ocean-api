@@ -231,8 +231,11 @@ const (
 
 // Rate limit related messages
 const (
-	MsgRateLimitReached      = "rate_limit.reached"
-	MsgRateLimitTotalReached = "rate_limit.total_reached"
+	MsgRateLimitReached          = "rate_limit.reached"
+	MsgRateLimitTotalReached     = "rate_limit.total_reached"
+	MsgRateLimitTokensRequired   = "subscription.rate_limit_tokens_required"
+	MsgRateLimitMultiplierReq    = "subscription.rate_limit_multiplier_required"
+	MsgRateLimitInvalidPlanType  = "subscription.rate_limit_invalid_plan_type"
 )
 
 // Setting related messages

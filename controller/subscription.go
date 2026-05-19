@@ -167,6 +167,22 @@ func AdminCreateSubscriptionPlan(c *gin.Context) {
 		common.ApiErrorMsg(c, "自定义重置周期需大于0秒")
 		return
 	}
+	// Validate rate limit params
+	if req.Plan.PlanType == "" {
+		req.Plan.PlanType = model.PlanTypeAPI
+	}
+	if err := service.ValidateRateLimitParams(req.Plan.PlanType, req.Plan.RateLimitTokensPerWindow, req.Plan.RateLimitWeeklyMultiplier); err != nil {
+		if i18nErr, ok := err.(*service.I18nError); ok {
+			common.ApiErrorI18n(c, i18nErr.Key, i18nErr.Args)
+		} else {
+			common.ApiErrorMsg(c, err.Error())
+		}
+		return
+	}
+	if req.Plan.PlanType == model.PlanTypeAPI {
+		req.Plan.RateLimitTokensPerWindow = 0
+		req.Plan.RateLimitWeeklyMultiplier = 0
+	}
 	err := model.DB.Create(&req.Plan).Error
 	if err != nil {
 		common.ApiError(c, err)
@@ -234,6 +250,22 @@ func AdminUpdateSubscriptionPlan(c *gin.Context) {
 		common.ApiErrorMsg(c, "自定义重置周期需大于0秒")
 		return
 	}
+	// Validate rate limit params
+	if req.Plan.PlanType == "" {
+		req.Plan.PlanType = model.PlanTypeAPI
+	}
+	if err := service.ValidateRateLimitParams(req.Plan.PlanType, req.Plan.RateLimitTokensPerWindow, req.Plan.RateLimitWeeklyMultiplier); err != nil {
+		if i18nErr, ok := err.(*service.I18nError); ok {
+			common.ApiErrorI18n(c, i18nErr.Key, i18nErr.Args)
+		} else {
+			common.ApiErrorMsg(c, err.Error())
+		}
+		return
+	}
+	if req.Plan.PlanType == model.PlanTypeAPI {
+		req.Plan.RateLimitTokensPerWindow = 0
+		req.Plan.RateLimitWeeklyMultiplier = 0
+	}
 
 	err := model.DB.Transaction(func(tx *gorm.DB) error {
 		// update plan (allow zero values updates with map)
@@ -254,6 +286,9 @@ func AdminUpdateSubscriptionPlan(c *gin.Context) {
 			"upgrade_group":              req.Plan.UpgradeGroup,
 			"quota_reset_period":         req.Plan.QuotaResetPeriod,
 			"quota_reset_custom_seconds": req.Plan.QuotaResetCustomSeconds,
+			"plan_type":                    req.Plan.PlanType,
+			"rate_limit_tokens_per_window": req.Plan.RateLimitTokensPerWindow,
+			"rate_limit_weekly_multiplier": req.Plan.RateLimitWeeklyMultiplier,
 			"updated_at":                 common.GetTimestamp(),
 		}
 		if err := tx.Model(&model.SubscriptionPlan{}).Where("id = ?", id).Updates(updateMap).Error; err != nil {

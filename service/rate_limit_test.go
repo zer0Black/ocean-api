@@ -1011,3 +1011,124 @@ func TestGetUserRateLimitStatus_DeletedPlan(t *testing.T) {
 		t.Errorf("expected empty plan_title for deleted plan, got '%s'", statuses[0].PlanTitle)
 	}
 }
+
+// --- T5: 套餐 CRUD 校验变更测试 ---
+
+func TestValidateRateLimitParams_APIPlan(t *testing.T) {
+	err := ValidateRateLimitParams("api", 0, 0)
+	if err != nil {
+		t.Errorf("API plan with zero rate limit fields should pass: %v", err)
+	}
+}
+
+func TestValidateRateLimitParams_CodingPlanValid(t *testing.T) {
+	err := ValidateRateLimitParams("coding_plan", 500000, 20)
+	if err != nil {
+		t.Errorf("valid CodingPlan should pass: %v", err)
+	}
+}
+
+func TestValidateRateLimitParams_CodingPlanMissingTokens(t *testing.T) {
+	err := ValidateRateLimitParams("coding_plan", 0, 20)
+	if err == nil {
+		t.Error("CodingPlan with zero tokens_per_window should fail")
+	}
+}
+
+func TestValidateRateLimitParams_CodingPlanMissingMultiplier(t *testing.T) {
+	err := ValidateRateLimitParams("coding_plan", 500000, 0)
+	if err == nil {
+		t.Error("CodingPlan with zero weekly_multiplier should fail")
+	}
+}
+
+func TestValidateRateLimitParams_CodingPlanNegativeTokens(t *testing.T) {
+	err := ValidateRateLimitParams("coding_plan", -1, 20)
+	if err == nil {
+		t.Error("CodingPlan with negative tokens_per_window should fail")
+	}
+}
+
+func TestValidateRateLimitParams_InvalidPlanType(t *testing.T) {
+	err := ValidateRateLimitParams("invalid", 0, 0)
+	if err == nil {
+		t.Error("invalid plan_type should fail")
+	}
+}
+
+// --- T5: 补充边界与异常路径测试 ---
+
+func TestValidateRateLimitParams_CodingPlanNegativeMultiplier(t *testing.T) {
+	err := ValidateRateLimitParams("coding_plan", 500000, -1)
+	if err == nil {
+		t.Error("CodingPlan with negative weekly_multiplier should fail")
+	}
+}
+
+func TestValidateRateLimitParams_APIPlanWithNonZeroFields(t *testing.T) {
+	// API plan should accept even non-zero rate limit fields (they get zeroed by controller)
+	err := ValidateRateLimitParams("api", 999, 50)
+	if err != nil {
+		t.Errorf("API plan should always pass validation: %v", err)
+	}
+}
+
+func TestValidateRateLimitParams_EmptyPlanType(t *testing.T) {
+	err := ValidateRateLimitParams("", 0, 0)
+	if err == nil {
+		t.Error("empty plan_type should fail")
+	}
+}
+
+func TestValidateRateLimitParams_I18nErrorType_TokensRequired(t *testing.T) {
+	err := ValidateRateLimitParams("coding_plan", 0, 20)
+	if err == nil {
+		t.Fatal("expected error for missing tokens_per_window")
+	}
+	i18nErr, ok := err.(*I18nError)
+	if !ok {
+		t.Fatalf("expected *I18nError, got %T", err)
+	}
+	if i18nErr.Key != "subscription.rate_limit_tokens_required" {
+		t.Errorf("expected key subscription.rate_limit_tokens_required, got %s", i18nErr.Key)
+	}
+}
+
+func TestValidateRateLimitParams_I18nErrorType_MultiplierRequired(t *testing.T) {
+	err := ValidateRateLimitParams("coding_plan", 500000, 0)
+	if err == nil {
+		t.Fatal("expected error for missing weekly_multiplier")
+	}
+	i18nErr, ok := err.(*I18nError)
+	if !ok {
+		t.Fatalf("expected *I18nError, got %T", err)
+	}
+	if i18nErr.Key != "subscription.rate_limit_multiplier_required" {
+		t.Errorf("expected key subscription.rate_limit_multiplier_required, got %s", i18nErr.Key)
+	}
+}
+
+func TestValidateRateLimitParams_I18nErrorType_InvalidPlanType(t *testing.T) {
+	err := ValidateRateLimitParams("foobar", 0, 0)
+	if err == nil {
+		t.Fatal("expected error for invalid plan_type")
+	}
+	i18nErr, ok := err.(*I18nError)
+	if !ok {
+		t.Fatalf("expected *I18nError, got %T", err)
+	}
+	if i18nErr.Key != "subscription.rate_limit_invalid_plan_type" {
+		t.Errorf("expected key subscription.rate_limit_invalid_plan_type, got %s", i18nErr.Key)
+	}
+	if i18nErr.Args == nil || i18nErr.Args["plan_type"] != "foobar" {
+		t.Errorf("expected Args to contain plan_type=foobar, got %v", i18nErr.Args)
+	}
+}
+
+func TestValidateRateLimitParams_CodingPlanExactOne(t *testing.T) {
+	// Minimum valid values (both = 1)
+	err := ValidateRateLimitParams("coding_plan", 1, 1)
+	if err != nil {
+		t.Errorf("CodingPlan with tokens=1 and multiplier=1 should pass: %v", err)
+	}
+}

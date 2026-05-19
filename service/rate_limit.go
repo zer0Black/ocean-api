@@ -9,10 +9,23 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/go-redis/redis/v8"
 )
+
+// I18nError wraps an i18n message key with optional template arguments.
+// It implements the error interface so it can be used where error is expected,
+// while also carrying structured i18n data for the controller layer.
+type I18nError struct {
+	Key  string
+	Args map[string]any
+}
+
+func (e *I18nError) Error() string {
+	return e.Key
+}
 
 // Calc5hWindowKey returns the 5-hour window index (0-4) for a given UTC hour.
 func Calc5hWindowKey(utcHour int) int {
@@ -241,4 +254,24 @@ func GetUserRateLimitStatus(userId int) ([]RateLimitStatus, error) {
 		result = append(result, *status)
 	}
 	return result, nil
+}
+
+// ValidateRateLimitParams validates rate limit parameters based on plan type.
+// Returns an *I18nError on validation failure, which carries an i18n key for
+// the controller to pass to common.ApiErrorI18n.
+func ValidateRateLimitParams(planType string, tokensPerWindow int, weeklyMultiplier int) error {
+	switch planType {
+	case model.PlanTypeAPI:
+		return nil
+	case model.PlanTypeCodingPlan:
+		if tokensPerWindow < 1 {
+			return &I18nError{Key: i18n.MsgRateLimitTokensRequired}
+		}
+		if weeklyMultiplier < 1 {
+			return &I18nError{Key: i18n.MsgRateLimitMultiplierReq}
+		}
+		return nil
+	default:
+		return &I18nError{Key: i18n.MsgRateLimitInvalidPlanType, Args: map[string]any{"plan_type": planType}}
+	}
 }
