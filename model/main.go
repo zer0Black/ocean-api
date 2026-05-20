@@ -404,6 +404,9 @@ func ensureSubscriptionPlanTableSQLite() error {
 ` + "`total_amount`" + ` bigint NOT NULL DEFAULT 0,
 ` + "`quota_reset_period`" + ` varchar(16) DEFAULT 'never',
 ` + "`quota_reset_custom_seconds`" + ` bigint DEFAULT 0,
+` + "`plan_type`" + ` varchar(32) NOT NULL DEFAULT 'api',
+` + "`rate_limit_tokens_per_window`" + ` integer NOT NULL DEFAULT 0,
+` + "`rate_limit_weekly_multiplier`" + ` integer NOT NULL DEFAULT 0,
 ` + "`created_at`" + ` bigint,
 ` + "`updated_at`" + ` bigint,
 PRIMARY KEY (` + "`id`" + `)
@@ -437,6 +440,9 @@ PRIMARY KEY (` + "`id`" + `)
 		{Name: "total_amount", DDL: "`total_amount` bigint NOT NULL DEFAULT 0"},
 		{Name: "quota_reset_period", DDL: "`quota_reset_period` varchar(16) DEFAULT 'never'"},
 		{Name: "quota_reset_custom_seconds", DDL: "`quota_reset_custom_seconds` bigint DEFAULT 0"},
+		{Name: "plan_type", DDL: "`plan_type` varchar(32) NOT NULL DEFAULT 'api'"},
+		{Name: "rate_limit_tokens_per_window", DDL: "`rate_limit_tokens_per_window` integer NOT NULL DEFAULT 0"},
+		{Name: "rate_limit_weekly_multiplier", DDL: "`rate_limit_weekly_multiplier` integer NOT NULL DEFAULT 0"},
 		{Name: "created_at", DDL: "`created_at` bigint"},
 		{Name: "updated_at", DDL: "`updated_at` bigint"},
 	}
