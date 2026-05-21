@@ -11,6 +11,9 @@ logs
 web/default/dist
 web/classic/dist
 web/node_modules
+e2e_test/node_modules
+e2e_test/test-results
+.playwright-cli
 web/dist
 .env
 one-api
