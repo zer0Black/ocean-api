@@ -4487,12 +4487,13 @@
     "Weekly limit = 5-hour limit × multiplier": "Weekly limit = 5-hour limit × multiplier",
     "Weekly Limit": "Weekly Limit",
     "5h Window": "5h Window",
-    "Weekly Window": "Weekly Window",
-    "used": "used",
     "remaining": "remaining",
     "resets in": "resets in",
-    "tokens": "tokens",
     "Per 5h allowance": "Per 5h allowance",
-    "Weekly allowance": "Weekly allowance"
+    "Weekly allowance": "Weekly allowance",
+    "Common Fields": "Common Fields",
+    "Enter amount in M tokens": "Enter amount in M tokens",
+    "M token": "M token",
+    "Weekly limit": "Weekly limit"
   }
 }
