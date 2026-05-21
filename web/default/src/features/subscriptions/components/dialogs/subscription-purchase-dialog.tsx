@@ -20,6 +20,7 @@ import { useState, useEffect } from 'react'
 import { Crown, CalendarClock, Package } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import { GroupBadge } from '@/components/group-badge'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import {
@@ -264,6 +265,14 @@ export function SubscriptionPurchaseDialog(props: Props) {
                   </div>
                 )}
               </>
+            )}
+            {plan.upgrade_group && (
+              <div className='flex items-center justify-between'>
+                <span className='text-muted-foreground text-sm'>
+                  {t('Upgrade Group')}
+                </span>
+                <GroupBadge group={plan.upgrade_group} />
+              </div>
             )}
             <Separator />
             <div className='flex items-center justify-between'>
