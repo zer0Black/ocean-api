@@ -6,7 +6,7 @@ sub_plans:
   - id: "01"
     name: "表单与展示优化"
     file: "01_表单与展示优化.md"
-    status: "pending"
+    status: "completed"
 
 execution_order:
   - ["01"]

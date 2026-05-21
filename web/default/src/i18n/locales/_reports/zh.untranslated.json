@@ -87,6 +87,7 @@
   "Submodel": "Submodel",
   "SunoAPI": "SunoAPI",
   "Telegram": "Telegram",
+  "tokens": "tokens",
   "TTFT P50": "TTFT P50",
   "TTFT P95": "TTFT P95",
   "TTFT P99": "TTFT P99",
@@ -97,5 +98,6 @@
   "Well-Known URL": "Well-Known URL",
   "whsec_xxx": "whsec_xxx",
   "Worker URL": "Worker URL",
-  "Xinference": "Xinference"
+  "Xinference": "Xinference",
+  "M token": "M token"
 }
