@@ -26,7 +26,6 @@ import {
   type FieldPath,
   type FieldValues,
 } from 'react-hook-form'
-import { useRender } from '@base-ui/react/use-render'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/utils'
 import { Label } from '@/components/ui/label'
@@ -125,9 +124,9 @@ function FormControl({
 }: { children: React.ReactElement } & Record<string, unknown>) {
   const { error, formItemId, formDescriptionId, formMessageId } = useFormField()
 
-  return useRender({
-    render: children,
-    props: {
+  return React.cloneElement(
+    children as React.ReactElement<Record<string, unknown>>,
+    {
       'data-slot': 'form-control',
       id: formItemId,
       'aria-describedby': !error
@@ -135,8 +134,8 @@ function FormControl({
         : `${formDescriptionId} ${formMessageId}`,
       'aria-invalid': !!error,
       ...props,
-    },
-  })
+    }
+  )
 }
 
 function FormDescription({ className, ...props }: React.ComponentProps<'p'>) {
