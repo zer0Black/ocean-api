@@ -37,7 +37,6 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
-import { GroupBadge } from '@/components/group-badge'
 import {
   paySubscriptionStripe,
   paySubscriptionCreem,
@@ -216,31 +215,32 @@ export function SubscriptionPurchaseDialog(props: Props) {
                 {formatDuration(plan, t)}
               </span>
             </div>
-            {formatResetPeriod(plan, t) !== t('No Reset') && (
-              <div className='flex justify-between'>
-                <span className='text-muted-foreground text-sm'>
-                  {t('Reset Period')}
-                </span>
-                <span className='text-sm'>{formatResetPeriod(plan, t)}</span>
-              </div>
+            {/* API 套餐：展示总额度 + 重置周期 */}
+            {plan.plan_type !== 'coding_plan' && (
+              <>
+                {formatResetPeriod(plan, t) !== t('No Reset') && (
+                  <div className='flex justify-between'>
+                    <span className='text-muted-foreground text-sm'>
+                      {t('Reset Period')}
+                    </span>
+                    <span className='text-sm'>{formatResetPeriod(plan, t)}</span>
+                  </div>
+                )}
+                <div className='flex items-center justify-between'>
+                  <span className='text-muted-foreground text-sm'>
+                    {t('Total Quota')}
+                  </span>
+                  <span className='flex items-center gap-1 text-sm'>
+                    <Package className='h-3.5 w-3.5' />
+                    {totalAmount > 0
+                      ? `${formatTokenCount(totalAmount)} ${t('tokens')}`
+                      : t('Unlimited')}
+                  </span>
+                </div>
+              </>
             )}
-            <div className='flex items-center justify-between'>
-              <span className='text-muted-foreground text-sm'>
-                {t('Total Quota')}
-              </span>
-              <span className='flex items-center gap-1 text-sm'>
-                <Package className='h-3.5 w-3.5' />
-                {totalAmount > 0 ? totalAmount : t('Unlimited')}
-              </span>
-            </div>
-            {plan.upgrade_group && (
-              <div className='flex items-center justify-between'>
-                <span className='text-muted-foreground text-sm'>
-                  {t('Upgrade Group')}
-                </span>
-                <GroupBadge group={plan.upgrade_group} />
-              </div>
-            )}
+
+            {/* CodingPlan 套餐：展示限速参数，不展示总额度 */}
             {plan.plan_type === 'coding_plan' && plan.rate_limit_tokens_per_window > 0 && (
               <>
                 <div className='flex justify-between'>
