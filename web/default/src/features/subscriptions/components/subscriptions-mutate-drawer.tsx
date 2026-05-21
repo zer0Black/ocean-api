@@ -104,6 +104,8 @@ export function SubscriptionsMutateDrawer({
   const durationUnit = form.watch('duration_unit')
   const resetPeriod = form.watch('quota_reset_period')
   const planType = form.watch('plan_type')
+  const tokensPerWindow = form.watch('rate_limit_tokens_per_window')
+  const weeklyMultiplier = form.watch('rate_limit_weekly_multiplier')
 
   const onSubmit = async (values: PlanFormValues) => {
     setIsSubmitting(true)
@@ -163,7 +165,7 @@ export function SubscriptionsMutateDrawer({
             onSubmit={form.handleSubmit(onSubmit)}
             className='flex-1 space-y-4 overflow-y-auto px-3 py-3 pb-4 sm:space-y-6 sm:px-4'
           >
-            {/* Basic Info */}
+            {/* ========== 1. Basic Info ========== */}
             <div className='space-y-4'>
               <h3 className='flex items-center gap-2 text-sm font-medium'>
                 <Settings2 className='h-4 w-4' />
@@ -201,52 +203,151 @@ export function SubscriptionsMutateDrawer({
                 )}
               />
 
+              {/* 套餐类型 — 独立占一行 */}
+              <FormField
+                control={form.control}
+                name='plan_type'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('Plan Type')}</FormLabel>
+                    <Select
+                      items={[
+                        { value: 'api', label: t('API Plan') },
+                        { value: 'coding_plan', label: t('Coding Plan') },
+                      ]}
+                      onValueChange={field.onChange}
+                      value={field.value}
+                    >
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent alignItemWithTrigger={false}>
+                        <SelectGroup>
+                          <SelectItem value='api'>{t('API Plan')}</SelectItem>
+                          <SelectItem value='coding_plan'>
+                            {t('Coding Plan')}
+                          </SelectItem>
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+
+            {/* ========== 2. Common Fields ========== */}
+            <div className='space-y-4'>
+              <h3 className='flex items-center gap-2 text-sm font-medium'>
+                <CalendarClock className='h-4 w-4' />
+                {t('Common Fields')}
+              </h3>
+
+              <FormField
+                control={form.control}
+                name='price_amount'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('Actual Amount')}</FormLabel>
+                    <FormControl>
+                      <Input
+                        {...field}
+                        type='number'
+                        step='0.01'
+                        min={0}
+                        onChange={(e) =>
+                          field.onChange(parseFloat(e.target.value) || 0)
+                        }
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {/* 有效期 */}
               <div className='grid grid-cols-1 gap-3 sm:grid-cols-2'>
                 <FormField
                   control={form.control}
-                  name='price_amount'
+                  name='duration_unit'
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>{t('Actual Amount')}</FormLabel>
-                      <FormControl>
-                        <Input
-                          {...field}
-                          type='number'
-                          step='0.01'
-                          min={0}
-                          onChange={(e) =>
-                            field.onChange(parseFloat(e.target.value) || 0)
-                          }
-                        />
-                      </FormControl>
+                      <FormLabel>{t('Duration Unit')}</FormLabel>
+                      <Select
+                        items={[
+                          ...durationUnitOpts.map((o) => ({
+                            value: o.value,
+                            label: o.label,
+                          })),
+                        ]}
+                        onValueChange={field.onChange}
+                        value={field.value}
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                        </FormControl>
+                      </Select>
+                      <SelectContent alignItemWithTrigger={false}>
+                        <SelectGroup>
+                          {durationUnitOpts.map((o) => (
+                            <SelectItem key={o.value} value={o.value}>
+                              {o.label}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      </SelectContent>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
 
-                <FormField
-                  control={form.control}
-                  name='total_amount'
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>{t('Total Quota')}</FormLabel>
-                      <FormControl>
-                        <Input
-                          {...field}
-                          type='number'
-                          min={0}
-                          onChange={(e) =>
-                            field.onChange(parseFloat(e.target.value) || 0)
-                          }
-                        />
-                      </FormControl>
-                      <FormDescription>
-                        {t('0 means unlimited')}
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                {durationUnit === 'custom' ? (
+                  <FormField
+                    control={form.control}
+                    name='custom_seconds'
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t('Custom Seconds')}</FormLabel>
+                        <FormControl>
+                          <Input
+                            {...field}
+                            type='number'
+                            min={1}
+                            onChange={(e) =>
+                              field.onChange(parseInt(e.target.value, 10) || 0)
+                            }
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                ) : (
+                  <FormField
+                    control={form.control}
+                    name='duration_value'
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t('Duration Value')}</FormLabel>
+                        <FormControl>
+                          <Input
+                            {...field}
+                            type='number'
+                            min={1}
+                            onChange={(e) =>
+                              field.onChange(parseInt(e.target.value, 10) || 0)
+                            }
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                )}
               </div>
 
               <div className='grid grid-cols-1 gap-3 sm:grid-cols-2'>
@@ -355,54 +456,86 @@ export function SubscriptionsMutateDrawer({
               </div>
             </div>
 
-            {/* Duration Settings */}
-            <div className='space-y-4'>
-              <h3 className='flex items-center gap-2 text-sm font-medium'>
-                <CalendarClock className='h-4 w-4' />
-                {t('Duration Settings')}
-              </h3>
+            {/* ========== 3. API Plan 专属字段区 ========== */}
+            {planType === 'api' && (
+              <div className='space-y-4'>
+                <h3 className='flex items-center gap-2 text-sm font-medium'>
+                  <RefreshCw className='h-4 w-4' />
+                  {t('Quota Settings')}
+                </h3>
 
-              <div className='grid grid-cols-1 gap-3 sm:grid-cols-2'>
                 <FormField
                   control={form.control}
-                  name='duration_unit'
+                  name='total_amount'
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>{t('Duration Unit')}</FormLabel>
-                      <Select
-                        items={[
-                          ...durationUnitOpts.map((o) => ({
-                            value: o.value,
-                            label: o.label,
-                          })),
-                        ]}
-                        onValueChange={field.onChange}
-                        value={field.value}
-                      >
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent alignItemWithTrigger={false}>
-                          <SelectGroup>
-                            {durationUnitOpts.map((o) => (
-                              <SelectItem key={o.value} value={o.value}>
-                                {o.label}
-                              </SelectItem>
-                            ))}
-                          </SelectGroup>
-                        </SelectContent>
-                      </Select>
+                      <FormLabel>{t('Total Quota')}</FormLabel>
+                      <FormControl>
+                        <div className='relative'>
+                          <Input
+                            {...field}
+                            type='number'
+                            min={0}
+                            step='0.1'
+                            className='pr-16'
+                            placeholder={t('Enter amount in M tokens')}
+                            onChange={(e) =>
+                              field.onChange(parseFloat(e.target.value) || 0)
+                            }
+                          />
+                          <span className='pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground'>
+                            {t('M token')}
+                          </span>
+                        </div>
+                      </FormControl>
+                      <FormDescription>
+                        {t('0 means unlimited')}
+                      </FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
 
-                {durationUnit === 'custom' ? (
+                <div className='grid grid-cols-1 gap-3 sm:grid-cols-2'>
                   <FormField
                     control={form.control}
-                    name='custom_seconds'
+                    name='quota_reset_period'
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t('Reset Cycle')}</FormLabel>
+                        <Select
+                          items={[
+                            ...resetPeriodOpts.map((o) => ({
+                              value: o.value,
+                              label: o.label,
+                            })),
+                          ]}
+                          onValueChange={field.onChange}
+                          value={field.value}
+                        >
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent alignItemWithTrigger={false}>
+                            <SelectGroup>
+                              {resetPeriodOpts.map((o) => (
+                                <SelectItem key={o.value} value={o.value}>
+                                  {o.label}
+                                </SelectItem>
+                              ))}
+                            </SelectGroup>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name='quota_reset_custom_seconds'
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>{t('Custom Seconds')}</FormLabel>
@@ -410,7 +543,8 @@ export function SubscriptionsMutateDrawer({
                           <Input
                             {...field}
                             type='number'
-                            min={1}
+                            min={0}
+                            disabled={resetPeriod !== 'custom'}
                             onChange={(e) =>
                               field.onChange(parseInt(e.target.value, 10) || 0)
                             }
@@ -420,140 +554,18 @@ export function SubscriptionsMutateDrawer({
                       </FormItem>
                     )}
                   />
-                ) : (
-                  <FormField
-                    control={form.control}
-                    name='duration_value'
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>{t('Duration Value')}</FormLabel>
-                        <FormControl>
-                          <Input
-                            {...field}
-                            type='number'
-                            min={1}
-                            onChange={(e) =>
-                              field.onChange(parseInt(e.target.value, 10) || 0)
-                            }
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                )}
+                </div>
               </div>
-            </div>
+            )}
 
-            {/* Quota Reset */}
-            <div className='space-y-4'>
-              <h3 className='flex items-center gap-2 text-sm font-medium'>
-                <RefreshCw className='h-4 w-4' />
-                {t('Quota Reset')}
-              </h3>
+            {/* ========== 4. Coding Plan 专属字段区 ========== */}
+            {planType === 'coding_plan' && (
+              <div className='space-y-4'>
+                <h3 className='flex items-center gap-2 text-sm font-medium'>
+                  <Gauge className='h-4 w-4' />
+                  {t('Rate Limit')}
+                </h3>
 
-              <div className='grid grid-cols-1 gap-3 sm:grid-cols-2'>
-                <FormField
-                  control={form.control}
-                  name='quota_reset_period'
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>{t('Reset Cycle')}</FormLabel>
-                      <Select
-                        items={[
-                          ...resetPeriodOpts.map((o) => ({
-                            value: o.value,
-                            label: o.label,
-                          })),
-                        ]}
-                        onValueChange={field.onChange}
-                        value={field.value}
-                      >
-                        <FormControl>
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent alignItemWithTrigger={false}>
-                          <SelectGroup>
-                            {resetPeriodOpts.map((o) => (
-                              <SelectItem key={o.value} value={o.value}>
-                                {o.label}
-                              </SelectItem>
-                            ))}
-                          </SelectGroup>
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name='quota_reset_custom_seconds'
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>{t('Custom Seconds')}</FormLabel>
-                      <FormControl>
-                        <Input
-                          {...field}
-                          type='number'
-                          min={0}
-                          disabled={resetPeriod !== 'custom'}
-                          onChange={(e) =>
-                            field.onChange(parseInt(e.target.value, 10) || 0)
-                          }
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </div>
-            </div>
-
-            {/* Rate Limit Config */}
-            <div className='space-y-4'>
-              <h3 className='flex items-center gap-2 text-sm font-medium'>
-                <Gauge className='h-4 w-4' />
-                {t('Rate Limit')}
-              </h3>
-
-              <FormField
-                control={form.control}
-                name='plan_type'
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t('Plan Type')}</FormLabel>
-                    <Select
-                      items={[
-                        { value: 'api', label: t('API Plan') },
-                        { value: 'coding_plan', label: t('Coding Plan') },
-                      ]}
-                      onValueChange={field.onChange}
-                      value={field.value}
-                    >
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent alignItemWithTrigger={false}>
-                        <SelectGroup>
-                          <SelectItem value='api'>{t('API Plan')}</SelectItem>
-                          <SelectItem value='coding_plan'>
-                            {t('Coding Plan')}
-                          </SelectItem>
-                        </SelectGroup>
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              {planType === 'coding_plan' && (
                 <div className='grid grid-cols-1 gap-3 sm:grid-cols-2'>
                   <FormField
                     control={form.control}
@@ -562,19 +574,25 @@ export function SubscriptionsMutateDrawer({
                       <FormItem>
                         <FormLabel>{t('5-Hour Token Limit')}</FormLabel>
                         <FormControl>
-                          <Input
-                            {...field}
-                            type='number'
-                            min={0}
-                            onChange={(e) =>
-                              field.onChange(parseInt(e.target.value, 10) || 0)
-                            }
-                          />
+                          <div className='relative'>
+                            <Input
+                              {...field}
+                              type='number'
+                              min={1}
+                              step='0.1'
+                              className='pr-16'
+                              placeholder={t('Enter amount in M tokens')}
+                              onChange={(e) =>
+                                field.onChange(parseFloat(e.target.value) || 0)
+                              }
+                            />
+                            <span className='pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground'>
+                              {t('M token')}
+                            </span>
+                          </div>
                         </FormControl>
                         <FormDescription>
-                          {t(
-                            'Token consumption limit per 5-hour window'
-                          )}
+                          {t('Token consumption limit per 5-hour window')}
                         </FormDescription>
                         <FormMessage />
                       </FormItem>
@@ -591,29 +609,34 @@ export function SubscriptionsMutateDrawer({
                           <Input
                             {...field}
                             type='number'
-                            min={0}
-                            step='0.1'
+                            min={1}
+                            step={1}
                             onChange={(e) =>
-                              field.onChange(
-                                parseFloat(e.target.value) || 0
-                              )
+                              field.onChange(parseInt(e.target.value, 10) || 1)
                             }
                           />
                         </FormControl>
                         <FormDescription>
-                          {t(
-                            'Weekly limit = 5-hour limit × multiplier'
-                          )}
+                          {t('Weekly limit = 5-hour limit × multiplier')}
                         </FormDescription>
                         <FormMessage />
                       </FormItem>
                     )}
                   />
                 </div>
-              )}
-            </div>
 
-            {/* Payment Config */}
+                {/* 周上限实时预览 */}
+                {tokensPerWindow > 0 && weeklyMultiplier > 0 && (
+                  <div className='text-muted-foreground rounded-md border border-dashed px-3 py-2 text-sm'>
+                    {t('Weekly limit')}:{' '}
+                    {(tokensPerWindow * weeklyMultiplier).toFixed(1)}{' '}
+                    {t('M token')}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ========== 5. Payment Config ========== */}
             <div className='space-y-4'>
               <h3 className='flex items-center gap-2 text-sm font-medium'>
                 <CreditCard className='h-4 w-4' />
