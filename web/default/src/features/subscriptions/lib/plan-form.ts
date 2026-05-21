@@ -85,12 +85,12 @@ export function planToFormValues(plan: SubscriptionPlan): PlanFormValues {
     enabled: plan.enabled !== false,
     sort_order: Number(plan.sort_order || 0),
     max_purchase_per_user: Number(plan.max_purchase_per_user || 0),
-    total_amount: Number(plan.total_amount || 0),
+    total_amount: Number(plan.total_amount || 0) / 1_000_000,
     upgrade_group: plan.upgrade_group || '',
     stripe_price_id: plan.stripe_price_id || '',
     creem_product_id: plan.creem_product_id || '',
     plan_type: plan.plan_type || 'api',
-    rate_limit_tokens_per_window: Number(plan.rate_limit_tokens_per_window || 0),
+    rate_limit_tokens_per_window: Number(plan.rate_limit_tokens_per_window || 0) / 1_000_000,
     rate_limit_weekly_multiplier: Number(plan.rate_limit_weekly_multiplier || 0),
   }
 }
@@ -110,12 +110,12 @@ export function formValuesToPlanPayload(values: PlanFormValues): PlanPayload {
           : 0,
       sort_order: Number(values.sort_order || 0),
       max_purchase_per_user: Number(values.max_purchase_per_user || 0),
-      total_amount: Number(values.total_amount || 0),
+      total_amount: Math.round(Number(values.total_amount || 0) * 1_000_000),
       upgrade_group: values.upgrade_group || '',
       plan_type: values.plan_type || 'api',
       rate_limit_tokens_per_window:
         values.plan_type === 'coding_plan'
-          ? Number(values.rate_limit_tokens_per_window || 0)
+          ? Math.round(Number(values.rate_limit_tokens_per_window || 0) * 1_000_000)
           : 0,
       rate_limit_weekly_multiplier:
         values.plan_type === 'coding_plan'
