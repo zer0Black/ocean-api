@@ -1,0 +1,29 @@
+feature_id: "20260522_feat_钱包页面"
+base_on: null                    # 变更基线 feature_id，新建时为 null
+change_group: null               # 跨模块变更组 ID，单模块变更时为 null
+feature_name: "钱包页面"
+creator: "lixuetao"
+created_at: "2026-05-22T10:39:19Z"
+updated_at: "2026-05-22T10:39:19Z"
+stages:
+  specs:
+    status: "pending"
+    started_at: null
+    completed_at: null
+    check_owner: null   # 各阶段通过检查的人
+  interface:
+    status: "pending"
+    started_at: null
+    completed_at: null
+    check_owner: null
+  dev_plan:
+    status: "pending"
+    started_at: null
+    completed_at: null
+    check_owner: null
+  dev_exec:
+    status: "pending"
+    started_at: null
+    completed_at: null
+    check_owner: null
+rollback_history: []
