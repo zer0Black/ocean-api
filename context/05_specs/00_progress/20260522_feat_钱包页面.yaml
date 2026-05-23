@@ -4,16 +4,16 @@ change_group: null               # 跨模块变更组 ID，单模块变更时为
 feature_name: "钱包页面"
 creator: "lixuetao"
 created_at: "2026-05-22T10:39:19Z"
-updated_at: "2026-05-22T10:39:19Z"
+updated_at: "2026-05-23T02:00:00Z"
 stages:
   specs:
-    status: "pending"
+    status: "completed"
     started_at: null
-    completed_at: null
-    check_owner: null   # 各阶段通过检查的人
+    completed_at: "2026-05-23T02:00:00Z"
+    check_owner: "lixuetao"
   interface:
-    status: "pending"
-    started_at: null
+    status: "in_progress"
+    started_at: "2026-05-23T02:00:00Z"
     completed_at: null
     check_owner: null
   dev_plan:
