@@ -68,7 +68,6 @@ import type { PaymentMethod, TopupInfo } from '../types'
 
 interface SubscriptionPlansCardProps {
   topupInfo: TopupInfo | null
-  onAvailabilityChange?: (available: boolean) => void
 }
 
 function getEpayMethods(payMethods: PaymentMethod[] = []): PaymentMethod[] {
@@ -97,7 +96,6 @@ function getBillingPreferenceLabel(
 
 export function SubscriptionPlansCard({
   topupInfo,
-  onAvailabilityChange,
 }: SubscriptionPlansCardProps) {
   const { t } = useTranslation()
 
@@ -201,7 +199,6 @@ export function SubscriptionPlansCard({
 
   const hasActive = activeSubscriptions.length > 0
   const hasAny = allSubscriptions.length > 0
-  const isAvailable = loading || plans.length > 0 || hasAny
   const disablePref = !hasActive
   const isSubPref =
     billingPreference === 'subscription_first' ||
@@ -218,10 +215,6 @@ export function SubscriptionPlansCard({
     }
     return map
   }, [allSubscriptions])
-
-  useEffect(() => {
-    onAvailabilityChange?.(isAvailable)
-  }, [isAvailable, onAvailabilityChange])
 
   const planTitleMap = useMemo(() => {
     const map = new Map<number, string>()
@@ -240,6 +233,16 @@ export function SubscriptionPlansCard({
     }
     return map
   }, [rateLimits])
+
+  const apiPlans = useMemo(
+    () => plans.filter((p) => p?.plan?.plan_type !== 'coding_plan'),
+    [plans]
+  )
+  const codingPlans = useMemo(
+    () => plans.filter((p) => p?.plan?.plan_type === 'coding_plan'),
+    [plans]
+  )
+  const hasBothPlanTypes = apiPlans.length > 0 && codingPlans.length > 0
 
   const getRemainingDays = (sub: UserSubscriptionRecord) => {
     const endTime = sub?.subscription?.end_time || 0
@@ -555,246 +558,236 @@ export function SubscriptionPlansCard({
           )}
         </div>
 
-        {/* Available plans grid — 分区域展示 */}
+        {/* Available plans grid — 按类型左右分栏 */}
         {plans.length > 0 ? (
-          <>
-            {/* API Plans 区域 */}
-            {(() => {
-              const apiPlans = plans.filter((p) => p?.plan?.plan_type !== 'coding_plan')
-              if (apiPlans.length === 0) return null
-              return (
-                <div>
-                  <h3 className='mb-3 text-sm font-medium'>
-                    {t('API Plan')}
-                  </h3>
-                  <div className='grid grid-cols-1 gap-3 2xl:grid-cols-2 2xl:gap-4'>
-                    {apiPlans.map((p, index) => {
-                      const plan = p?.plan
-                      if (!plan) return null
-                      const totalAmount = Number(plan.total_amount || 0)
-                      const price = Number(plan.price_amount || 0).toFixed(2)
-                      const isPopular = index === 0 && apiPlans.length > 1
-                      const limit = Number(plan.max_purchase_per_user || 0)
-                      const count = planPurchaseCountMap.get(plan.id) || 0
-                      const reached = limit > 0 && count >= limit
+          <div className={cn('grid gap-4', hasBothPlanTypes && 'md:grid-cols-2')}>
+            {apiPlans.length > 0 && (
+              <div>
+                <h3 className='mb-3 text-sm font-medium'>
+                  {t('API Plan')}
+                </h3>
+                <div className='grid grid-cols-1 gap-3'>
+                  {apiPlans.map((p, index) => {
+                    const plan = p?.plan
+                    if (!plan) return null
+                    const totalAmount = Number(plan.total_amount || 0)
+                    const price = Number(plan.price_amount || 0).toFixed(2)
+                    const isPopular = index === 0 && apiPlans.length > 1
+                    const limit = Number(plan.max_purchase_per_user || 0)
+                    const count = planPurchaseCountMap.get(plan.id) || 0
+                    const reached = limit > 0 && count >= limit
 
-                      const benefits = [
-                        `${t('Validity Period')}: ${formatDuration(plan, t)}`,
-                        formatResetPeriod(plan, t) !== t('No Reset')
-                          ? `${t('Quota Reset')}: ${formatResetPeriod(plan, t)}`
-                          : null,
-                        totalAmount > 0
-                          ? `${t('Total Quota')}: ${formatTokenCount(totalAmount)} ${t('tokens')}`
-                          : `${t('Total Quota')}: ${t('Unlimited')}`,
-                        limit > 0 ? `${t('Purchase Limit')}: ${limit}` : null,
-                        plan.upgrade_group
-                          ? `${t('Upgrade Group')}: ${plan.upgrade_group}`
-                          : null,
-                      ].filter(Boolean) as string[]
+                    const benefits = [
+                      `${t('Validity Period')}: ${formatDuration(plan, t)}`,
+                      formatResetPeriod(plan, t) !== t('No Reset')
+                        ? `${t('Quota Reset')}: ${formatResetPeriod(plan, t)}`
+                        : null,
+                      totalAmount > 0
+                        ? `${t('Total Quota')}: ${formatTokenCount(totalAmount)} ${t('tokens')}`
+                        : `${t('Total Quota')}: ${t('Unlimited')}`,
+                      limit > 0 ? `${t('Purchase Limit')}: ${limit}` : null,
+                      plan.upgrade_group
+                        ? `${t('Upgrade Group')}: ${plan.upgrade_group}`
+                        : null,
+                    ].filter(Boolean) as string[]
 
-                      return (
-                        <Card
-                          key={plan.id}
-                          className={cn(
-                            'transition-shadow hover:shadow-md',
-                            isPopular && 'border-primary/70 shadow-sm'
-                          )}
-                        >
-                          <CardContent className='flex h-full flex-col p-3.5 sm:p-4'>
-                            <div className='mb-2 flex items-start justify-between gap-3'>
-                              <div className='min-w-0'>
-                                <h4 className='truncate font-semibold'>
-                                  {plan.title || t('Subscription Plans')}
-                                </h4>
-                                {plan.subtitle && (
-                                  <p className='text-muted-foreground truncate text-xs'>
-                                    {plan.subtitle}
-                                  </p>
-                                )}
-                              </div>
-                              {isPopular && (
-                                <StatusBadge
-                                  variant='info'
-                                  copyable={false}
-                                  className='shrink-0'
-                                >
-                                  <Sparkles className='h-3 w-3' />
-                                  {t('Recommended')}
-                                </StatusBadge>
+                    return (
+                      <Card
+                        key={plan.id}
+                        className={cn(
+                          'transition-shadow hover:shadow-md',
+                          isPopular && 'border-primary/70 shadow-sm'
+                        )}
+                      >
+                        <CardContent className='flex h-full flex-col p-3.5 sm:p-4'>
+                          <div className='mb-2 flex items-start justify-between gap-3'>
+                            <div className='min-w-0'>
+                              <h4 className='truncate font-semibold'>
+                                {plan.title || t('Subscription Plans')}
+                              </h4>
+                              {plan.subtitle && (
+                                <p className='text-muted-foreground truncate text-xs'>
+                                  {plan.subtitle}
+                                </p>
                               )}
                             </div>
-
-                            <div className='py-2'>
-                              <span className='text-primary text-2xl font-bold'>
-                                ${price}
-                              </span>
-                            </div>
-
-                            <div className='flex-1 space-y-1.5 pb-3'>
-                              {benefits.map((label) => (
-                                <div
-                                  key={label}
-                                  className='text-muted-foreground flex items-center gap-2 text-xs'
-                                >
-                                  <Check className='text-primary h-3 w-3 shrink-0' />
-                                  <span>{label}</span>
-                                </div>
-                              ))}
-                            </div>
-
-                            <Separator className='mb-3' />
-
-                            {reached ? (
-                              <Tooltip>
-                                <TooltipTrigger render={<div />}>
-                                  <Button variant='outline' className='w-full' disabled>
-                                    {t('Limit Reached')}
-                                  </Button>
-                                </TooltipTrigger>
-                                <TooltipContent>
-                                  {t('Purchase limit reached')} ({count}/{limit})
-                                </TooltipContent>
-                              </Tooltip>
-                            ) : (
-                              <Button
-                                variant='outline'
-                                className='w-full'
-                                onClick={() => {
-                                  setSelectedPlan(p)
-                                  setPurchaseOpen(true)
-                                }}
+                            {isPopular && (
+                              <StatusBadge
+                                variant='info'
+                                copyable={false}
+                                className='shrink-0'
                               >
-                                {t('Subscribe Now')}
-                              </Button>
+                                <Sparkles className='h-3 w-3' />
+                                {t('Recommended')}
+                              </StatusBadge>
                             )}
-                          </CardContent>
-                        </Card>
-                      )
-                    })}
-                  </div>
-                </div>
-              )
-            })()}
+                          </div>
 
-            {/* Coding Plan 区域 */}
-            {(() => {
-              const codingPlans = plans.filter((p) => p?.plan?.plan_type === 'coding_plan')
-              if (codingPlans.length === 0) return null
-              return (
-                <div>
-                  <h3 className='mb-3 text-sm font-medium'>
-                    {t('Coding Plan')}
-                  </h3>
-                  <div className='grid grid-cols-1 gap-3 2xl:grid-cols-2 2xl:gap-4'>
-                    {codingPlans.map((p, index) => {
-                      const plan = p?.plan
-                      if (!plan) return null
-                      const price = Number(plan.price_amount || 0).toFixed(2)
-                      const isPopular = index === 0 && codingPlans.length > 1
-                      const limit = Number(plan.max_purchase_per_user || 0)
-                      const count = planPurchaseCountMap.get(plan.id) || 0
-                      const reached = limit > 0 && count >= limit
-                      const tokensPerWindow = Number(plan.rate_limit_tokens_per_window || 0)
-                      const weeklyMultiplier = Number(plan.rate_limit_weekly_multiplier || 0)
+                          <div className='py-2'>
+                            <span className='text-primary text-2xl font-bold'>
+                              ${price}
+                            </span>
+                          </div>
 
-                      const benefits = [
-                        `${t('Validity Period')}: ${formatDuration(plan, t)}`,
-                        tokensPerWindow > 0
-                          ? `${t('Per 5h allowance')}: ${formatTokenCount(tokensPerWindow)} ${t('tokens')}`
-                          : null,
-                        tokensPerWindow > 0 && weeklyMultiplier > 0
-                          ? `${t('Weekly allowance')}: ${formatTokenCount(tokensPerWindow * weeklyMultiplier)} ${t('tokens')}`
-                          : null,
-                        limit > 0 ? `${t('Purchase Limit')}: ${limit}` : null,
-                        plan.upgrade_group
-                          ? `${t('Upgrade Group')}: ${plan.upgrade_group}`
-                          : null,
-                      ].filter(Boolean) as string[]
-
-                      return (
-                        <Card
-                          key={plan.id}
-                          className={cn(
-                            'transition-shadow hover:shadow-md',
-                            isPopular && 'border-primary/70 shadow-sm'
-                          )}
-                        >
-                          <CardContent className='flex h-full flex-col p-3.5 sm:p-4'>
-                            <div className='mb-2 flex items-start justify-between gap-3'>
-                              <div className='min-w-0'>
-                                <h4 className='truncate font-semibold'>
-                                  {plan.title || t('Subscription Plans')}
-                                </h4>
-                                {plan.subtitle && (
-                                  <p className='text-muted-foreground truncate text-xs'>
-                                    {plan.subtitle}
-                                  </p>
-                                )}
+                          <div className='flex-1 space-y-1.5 pb-3'>
+                            {benefits.map((label) => (
+                              <div
+                                key={label}
+                                className='text-muted-foreground flex items-center gap-2 text-xs'
+                              >
+                                <Check className='text-primary h-3 w-3 shrink-0' />
+                                <span>{label}</span>
                               </div>
-                              {isPopular && (
-                                <StatusBadge
-                                  variant='info'
-                                  copyable={false}
-                                  className='shrink-0'
-                                >
-                                  <Sparkles className='h-3 w-3' />
-                                  {t('Recommended')}
-                                </StatusBadge>
+                            ))}
+                          </div>
+
+                          <Separator className='mb-3' />
+
+                          {reached ? (
+                            <Tooltip>
+                              <TooltipTrigger render={<div />}>
+                                <Button variant='outline' className='w-full' disabled>
+                                  {t('Limit Reached')}
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                {t('Purchase limit reached')} ({count}/{limit})
+                              </TooltipContent>
+                            </Tooltip>
+                          ) : (
+                            <Button
+                              variant='outline'
+                              className='w-full'
+                              onClick={() => {
+                                setSelectedPlan(p)
+                                setPurchaseOpen(true)
+                              }}
+                            >
+                              {t('Subscribe Now')}
+                            </Button>
+                          )}
+                        </CardContent>
+                      </Card>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
+            {codingPlans.length > 0 && (
+              <div>
+                <h3 className='mb-3 text-sm font-medium'>
+                  {t('Coding Plan')}
+                </h3>
+                <div className='grid grid-cols-1 gap-3'>
+                  {codingPlans.map((p, index) => {
+                    const plan = p?.plan
+                    if (!plan) return null
+                    const price = Number(plan.price_amount || 0).toFixed(2)
+                    const isPopular = index === 0 && codingPlans.length > 1
+                    const limit = Number(plan.max_purchase_per_user || 0)
+                    const count = planPurchaseCountMap.get(plan.id) || 0
+                    const reached = limit > 0 && count >= limit
+                    const tokensPerWindow = Number(plan.rate_limit_tokens_per_window || 0)
+                    const weeklyMultiplier = Number(plan.rate_limit_weekly_multiplier || 0)
+
+                    const benefits = [
+                      `${t('Validity Period')}: ${formatDuration(plan, t)}`,
+                      tokensPerWindow > 0
+                        ? `${t('Per 5h allowance')}: ${formatTokenCount(tokensPerWindow)} ${t('tokens')}`
+                        : null,
+                      tokensPerWindow > 0 && weeklyMultiplier > 0
+                        ? `${t('Weekly allowance')}: ${formatTokenCount(tokensPerWindow * weeklyMultiplier)} ${t('tokens')}`
+                        : null,
+                      limit > 0 ? `${t('Purchase Limit')}: ${limit}` : null,
+                      plan.upgrade_group
+                        ? `${t('Upgrade Group')}: ${plan.upgrade_group}`
+                        : null,
+                    ].filter(Boolean) as string[]
+
+                    return (
+                      <Card
+                        key={plan.id}
+                        className={cn(
+                          'transition-shadow hover:shadow-md',
+                          isPopular && 'border-primary/70 shadow-sm'
+                        )}
+                      >
+                        <CardContent className='flex h-full flex-col p-3.5 sm:p-4'>
+                          <div className='mb-2 flex items-start justify-between gap-3'>
+                            <div className='min-w-0'>
+                              <h4 className='truncate font-semibold'>
+                                {plan.title || t('Subscription Plans')}
+                              </h4>
+                              {plan.subtitle && (
+                                <p className='text-muted-foreground truncate text-xs'>
+                                  {plan.subtitle}
+                                </p>
                               )}
                             </div>
-
-                            <div className='py-2'>
-                              <span className='text-primary text-2xl font-bold'>
-                                ${price}
-                              </span>
-                            </div>
-
-                            <div className='flex-1 space-y-1.5 pb-3'>
-                              {benefits.map((label) => (
-                                <div
-                                  key={label}
-                                  className='text-muted-foreground flex items-center gap-2 text-xs'
-                                >
-                                  <Check className='text-primary h-3 w-3 shrink-0' />
-                                  <span>{label}</span>
-                                </div>
-                              ))}
-                            </div>
-
-                            <Separator className='mb-3' />
-
-                            {reached ? (
-                              <Tooltip>
-                                <TooltipTrigger render={<div />}>
-                                  <Button variant='outline' className='w-full' disabled>
-                                    {t('Limit Reached')}
-                                  </Button>
-                                </TooltipTrigger>
-                                <TooltipContent>
-                                  {t('Purchase limit reached')} ({count}/{limit})
-                                </TooltipContent>
-                              </Tooltip>
-                            ) : (
-                              <Button
-                                variant='outline'
-                                className='w-full'
-                                onClick={() => {
-                                  setSelectedPlan(p)
-                                  setPurchaseOpen(true)
-                                }}
+                            {isPopular && (
+                              <StatusBadge
+                                variant='info'
+                                copyable={false}
+                                className='shrink-0'
                               >
-                                {t('Subscribe Now')}
-                              </Button>
+                                <Sparkles className='h-3 w-3' />
+                                {t('Recommended')}
+                              </StatusBadge>
                             )}
-                          </CardContent>
-                        </Card>
-                      )
-                    })}
-                  </div>
+                          </div>
+
+                          <div className='py-2'>
+                            <span className='text-primary text-2xl font-bold'>
+                              ${price}
+                            </span>
+                          </div>
+
+                          <div className='flex-1 space-y-1.5 pb-3'>
+                            {benefits.map((label) => (
+                              <div
+                                key={label}
+                                className='text-muted-foreground flex items-center gap-2 text-xs'
+                              >
+                                <Check className='text-primary h-3 w-3 shrink-0' />
+                                <span>{label}</span>
+                              </div>
+                            ))}
+                          </div>
+
+                          <Separator className='mb-3' />
+
+                          {reached ? (
+                            <Tooltip>
+                              <TooltipTrigger render={<div />}>
+                                <Button variant='outline' className='w-full' disabled>
+                                  {t('Limit Reached')}
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                {t('Purchase limit reached')} ({count}/{limit})
+                              </TooltipContent>
+                            </Tooltip>
+                          ) : (
+                            <Button
+                              variant='outline'
+                              className='w-full'
+                              onClick={() => {
+                                setSelectedPlan(p)
+                                setPurchaseOpen(true)
+                              }}
+                            >
+                              {t('Subscribe Now')}
+                            </Button>
+                          )}
+                        </CardContent>
+                      </Card>
+                    )
+                  })}
                 </div>
-              )
-            })()}
-          </>
+              </div>
+            )}
+          </div>
         ) : (
           <p className='text-muted-foreground py-4 text-center text-sm'>
             {t('No plans available')}
