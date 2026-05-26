@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useState, useEffect, useMemo, useCallback, Fragment } from 'react'
-import { Crown, RefreshCw, Sparkles, Check } from 'lucide-react'
+import { Crown, RefreshCw, Sparkles, Check, Zap, Code2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { formatQuota } from '@/lib/format'
@@ -155,19 +155,34 @@ function PlanCard({
     ].filter(Boolean) as string[]
   }
 
+  const isApi = type === 'api'
+  const accentClass = isApi ? 'text-blue-600' : 'text-purple-600'
+  const borderClass = isApi ? 'border-l-blue-500' : 'border-l-purple-500'
+  const bgClass = isApi ? 'bg-blue-50/40' : 'bg-purple-50/40'
+  const checkClass = isApi ? 'text-blue-500' : 'text-purple-500'
+
   return (
     <Card
       className={cn(
-        'transition-shadow hover:shadow-md',
+        'border-l-[3px] transition-shadow hover:shadow-md',
+        borderClass,
+        bgClass,
         isPopular && 'border-primary/70 shadow-sm'
       )}
     >
       <CardContent className='flex h-full flex-col p-3.5 sm:p-4'>
         <div className='mb-2 flex items-start justify-between gap-3'>
           <div className='min-w-0'>
-            <h4 className='truncate font-semibold'>
-              {plan.title || t('Subscription Plans')}
-            </h4>
+            <div className='flex items-center gap-1.5'>
+              {isApi ? (
+                <Zap className={cn('h-3.5 w-3.5', accentClass)} />
+              ) : (
+                <Code2 className={cn('h-3.5 w-3.5', accentClass)} />
+              )}
+              <h4 className='truncate font-semibold'>
+                {plan.title || t('Subscription Plans')}
+              </h4>
+            </div>
             {plan.subtitle && (
               <p className='text-muted-foreground truncate text-xs'>
                 {plan.subtitle}
@@ -187,7 +202,9 @@ function PlanCard({
         </div>
 
         <div className='py-2'>
-          <span className='text-primary text-2xl font-bold'>${price}</span>
+          <span className={cn('text-2xl font-bold', accentClass)}>
+            ${price}
+          </span>
         </div>
 
         <div className='flex-1 space-y-1.5 pb-3'>
@@ -196,7 +213,7 @@ function PlanCard({
               key={label}
               className='text-muted-foreground flex items-center gap-2 text-xs'
             >
-              <Check className='text-primary h-3 w-3 shrink-0' />
+              <Check className={cn('h-3 w-3 shrink-0', checkClass)} />
               <span>{label}</span>
             </div>
           ))}
@@ -697,15 +714,24 @@ export function SubscriptionPlansCard({
         {plans.length > 0 ? (
           <div
             className={cn(
-              'grid gap-3',
+              'relative grid gap-3',
               hasBothPlanTypes && 'md:grid-cols-2'
             )}
           >
+            {hasBothPlanTypes && (
+              <div className='absolute left-1/2 top-0 hidden h-full w-px -translate-x-1/2 bg-border md:block' />
+            )}
             {apiPlans.length > 0 && (
-              <h3 className='text-sm font-medium'>{t('API Plan')}</h3>
+              <div className='flex items-center gap-1.5 text-blue-700'>
+                <Zap className='h-4 w-4' />
+                <h3 className='text-sm font-medium'>{t('API Plan')}</h3>
+              </div>
             )}
             {codingPlans.length > 0 && (
-              <h3 className='text-sm font-medium'>{t('Coding Plan')}</h3>
+              <div className='flex items-center gap-1.5 text-purple-700'>
+                <Code2 className='h-4 w-4' />
+                <h3 className='text-sm font-medium'>{t('Coding Plan')}</h3>
+              </div>
             )}
             {Array.from({
               length: Math.max(apiPlans.length, codingPlans.length),
