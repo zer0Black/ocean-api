@@ -1,0 +1,12 @@
+feature_id: "20260524_feat_(RFC)钱包页面布局优化"
+name: "钱包页面布局优化"
+created_at: "2026-05-25"
+
+sub_plans:
+  - id: "01"
+    name: "钱包布局优化"
+    file: "01_钱包布局优化.md"
+    status: "pending"
+
+execution_order:
+  - ["01"]
