@@ -714,8 +714,8 @@ export function SubscriptionPlansCard({
         {plans.length > 0 ? (
           <div
             className={cn(
-              'relative grid gap-3',
-              hasBothPlanTypes && 'md:grid-cols-2'
+              'relative grid gap-y-3',
+              hasBothPlanTypes && 'md:grid-cols-2 md:gap-x-8'
             )}
           >
             {hasBothPlanTypes && (
