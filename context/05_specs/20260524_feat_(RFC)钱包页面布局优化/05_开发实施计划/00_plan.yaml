@@ -6,7 +6,7 @@ sub_plans:
   - id: "01"
     name: "钱包布局优化"
     file: "01_钱包布局优化.md"
-    status: "pending"
+    status: "completed"
 
 execution_order:
   - ["01"]
