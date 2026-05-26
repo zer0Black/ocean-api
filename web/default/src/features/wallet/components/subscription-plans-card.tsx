@@ -724,13 +724,13 @@ export function SubscriptionPlansCard({
             {apiPlans.length > 0 && (
               <div className='flex items-center gap-1.5 text-blue-700'>
                 <Zap className='h-4 w-4' />
-                <h3 className='text-sm font-medium'>{t('API Plan')}</h3>
+                <h3 className='text-base font-semibold'>{t('API Plan')}</h3>
               </div>
             )}
             {codingPlans.length > 0 && (
               <div className='flex items-center gap-1.5 text-purple-700'>
                 <Code2 className='h-4 w-4' />
-                <h3 className='text-sm font-medium'>{t('Coding Plan')}</h3>
+                <h3 className='text-base font-semibold'>{t('Coding Plan')}</h3>
               </div>
             )}
             {Array.from({
